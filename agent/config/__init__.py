@@ -15,6 +15,17 @@ from .models import (
 )
 from .loader import ConfigLoader
 
+# 导入旧配置系统的函数（向后兼容）
+from .legacy import (
+    apply_settings,
+    create_default_config,
+    get_model_config,
+    get_tools_config,
+    load_settings,
+    SETTINGS_FILE,
+    SINAN_HOME,
+)
+
 __all__ = [
     "ThinkingConfig",
     "ModelConfig",
@@ -24,4 +35,12 @@ __all__ = [
     "TaskConfig",
     "SinanSettings",
     "ConfigLoader",
+    # 旧配置系统
+    "apply_settings",
+    "create_default_config",
+    "get_model_config",
+    "get_tools_config",
+    "load_settings",
+    "SETTINGS_FILE",
+    "SINAN_HOME",
 ]

@@ -265,3 +265,77 @@ def test_task_executor_parallel():
     assert elapsed < 0.5  # 串行需要 0 + 0.1 + 0.2 = 0.3s，并行应该 < 0.5s
     assert all(r.success for r in results)
     assert all(manager.tasks[t.id].status == TaskStatus.COMPLETED for t in tasks)
+
+
+# ============================================================
+# TaskScheduler 测试
+# ============================================================
+
+from agent.tasks.scheduler import TaskScheduler
+
+
+def test_task_scheduler_dependency_order():
+    """测试依赖链调度顺序"""
+    manager = TaskManager()
+    executor = TaskExecutor(manager)
+    scheduler = TaskScheduler(manager, executor)
+
+    execution_order = []
+
+    def make_executor(name: str):
+        def executor_fn():
+            execution_order.append(name)
+            return f"{name} 完成"
+
+        return executor_fn
+
+    # 创建依赖链: A -> B -> C
+    task_a = manager.create_task("task_a", TaskType.TOOL_CALL, make_executor("A"), {}, [])
+    task_b = manager.create_task(
+        "task_b", TaskType.TOOL_CALL, make_executor("B"), {}, [task_a.id]
+    )
+    task_c = manager.create_task(
+        "task_c", TaskType.TOOL_CALL, make_executor("C"), {}, [task_b.id]
+    )
+
+    scheduler.run_until_complete(task_c.id)
+
+    # 验证执行顺序
+    assert execution_order == ["A", "B", "C"]
+    assert manager.tasks[task_a.id].status == TaskStatus.COMPLETED
+    assert manager.tasks[task_b.id].status == TaskStatus.COMPLETED
+    assert manager.tasks[task_c.id].status == TaskStatus.COMPLETED
+
+
+def test_task_scheduler_parallel_execution():
+    """测试并行执行独立任务"""
+    import time
+
+    manager = TaskManager()
+    executor = TaskExecutor(manager, max_workers=3)
+    scheduler = TaskScheduler(manager, executor)
+
+    def slow_executor(duration: float):
+        time.sleep(duration)
+        return f"完成 {duration}s"
+
+    # 创建 3 个独立任务
+    tasks = []
+    for i in range(3):
+        task = manager.create_task(
+            name=f"independent_task_{i}",
+            type=TaskType.TOOL_CALL,
+            executor=lambda d=i * 0.1: slow_executor(d),
+            args={},
+            dependencies=[],
+        )
+        tasks.append(task)
+
+    start = time.time()
+    results = scheduler.run_parallel([t.id for t in tasks])
+    elapsed = time.time() - start
+
+    # 并行执行应该比串行快
+    assert elapsed < 0.5
+    assert all(r.success for r in results)
+    assert all(manager.tasks[t.id].status == TaskStatus.COMPLETED for t in tasks)

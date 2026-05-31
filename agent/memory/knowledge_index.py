@@ -10,7 +10,7 @@ try:
     from whoosh.fields import Schema, TEXT, ID, KEYWORD, STORED
     from whoosh.qparser import MultifieldParser, QueryParser
     from whoosh.analysis import StemmingAnalyzer
-    from whoosh.writing import AsyncWriter
+    from whoosh.writing import AsyncWriter, CLEAR
     HAS_WHOOSH = True
 except ImportError:
     HAS_WHOOSH = False
@@ -161,7 +161,7 @@ class KnowledgeIndex:
     def rebuild_index(self, knowledge_dir: Path) -> int:
         # 清空现有索引
         writer = self.ix.writer()
-        writer.commit(mergetype=index.CLEAR)
+        writer.commit(mergetype=CLEAR)
 
         # 重新扫描知识库目录
         count = 0

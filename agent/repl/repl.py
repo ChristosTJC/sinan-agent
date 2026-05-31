@@ -139,13 +139,13 @@ class SinanREPL:
         self._knowledge_base = self._init_knowledge_base()
         self._session_db, self._session_id = self._init_session_db()
 
-        # 任务系统（注意：TaskExecutor 需要 manager 参数）
+        # 任务系统
         self.task_manager = TaskManager()
         self.task_executor = TaskExecutor(self.task_manager, max_workers=4)
         self.task_scheduler = TaskScheduler(self.task_manager, self.task_executor)
 
         # 上下文管理
-        self.context_manager = ContextManager(max_turns=10, max_tokens=100000)
+        self.context_manager = ContextManager(max_tokens=100000, window_size=20)
         self.message_compactor = MessageCompactor()
 
         # 工具（必须在构建系统提示之前初始化，因为 _build_runtime_context 需要读取工具列表）

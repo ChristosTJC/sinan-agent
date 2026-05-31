@@ -4,7 +4,7 @@ from agent.context.manager import ContextManager
 
 def test_context_manager_no_compression():
     """测试无需压缩的情况"""
-    ctx = ContextManager(max_turns=10, max_tokens=10000)
+    ctx = ContextManager(window_size=10, max_tokens=10000)
 
     # 添加系统消息
     ctx.add_message("system", "你是一个 RoboMaster 视觉系统助手")
@@ -23,12 +23,12 @@ def test_context_manager_no_compression():
 
 def test_context_manager_sliding_window():
     """测试滑动窗口压缩"""
-    ctx = ContextManager(max_turns=3, max_tokens=10000)
+    ctx = ContextManager(window_size=3, max_tokens=10000)
 
     # 添加系统消息
     ctx.add_message("system", "你是助手")
 
-    # 添加 5 轮对话（超过 max_turns=3）
+    # 添加 5 轮对话（超过 window_size=3）
     for i in range(5):
         ctx.add_message("user", f"问题 {i}")
         ctx.add_message("assistant", f"回答 {i}")
@@ -48,7 +48,7 @@ def test_context_manager_sliding_window():
 
 def test_context_manager_system_message_preserved():
     """测试系统消息始终保留"""
-    ctx = ContextManager(max_turns=2, max_tokens=10000)
+    ctx = ContextManager(window_size=2, max_tokens=10000)
 
     ctx.add_message("system", "系统提示")
 
@@ -69,7 +69,7 @@ def test_context_manager_system_message_preserved():
 
 def test_context_manager_token_estimation():
     """测试 Token 估算"""
-    ctx = ContextManager(max_turns=10, max_tokens=100)
+    ctx = ContextManager(window_size=10, max_tokens=100)
 
     # 添加长消息
     long_text = "A" * 200  # 约 200 tokens
@@ -84,7 +84,7 @@ def test_context_manager_token_estimation():
 
 def test_context_manager_clear():
     """测试清空上下文"""
-    ctx = ContextManager(max_turns=10, max_tokens=10000)
+    ctx = ContextManager(window_size=10, max_tokens=10000)
 
     ctx.add_message("system", "系统提示")
     ctx.add_message("user", "问题")

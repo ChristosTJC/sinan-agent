@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 虚拟环境
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 用户配置和敏感信息
+settings.json
+credentials.json
+*.pem
+*.key
+
+# 但保留示例文件
+!settings.json.example
+!settings.json.template
+
+# 本地数据
+.nexus-map/
+
+# 系统
+.DS_Store
+Thumbs.db

@@ -237,6 +237,28 @@ def cmd_tools(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_rebuild_index(args: argparse.Namespace) -> int:
+    """重建知识库索引。"""
+    from agent.memory import KnowledgeIndex
+
+    knowledge_dir = Path(args.knowledge_dir)
+    if not knowledge_dir.exists():
+        print(f"❌ 知识库目录不存在: {knowledge_dir}")
+        return 1
+
+    index_dir = SINAN_HOME / "knowledge_index"
+    print("正在重建索引...")
+
+    try:
+        index = KnowledgeIndex(index_dir=index_dir)
+        count = index.rebuild_index(knowledge_dir)
+        print(f"✓ 索引重建完成，共索引 {count} 个文档")
+        return 0
+    except Exception as e:
+        print(f"❌ 索引重建失败: {e}")
+        return 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     """构建 CLI 参数解析器。"""
     parser = argparse.ArgumentParser(
@@ -273,6 +295,10 @@ def build_parser() -> argparse.ArgumentParser:
     # tools
     sub.add_parser("tools", help="列出可用硬件工具")
 
+    # rebuild-index
+    rebuild = sub.add_parser("rebuild-index", help="重建知识库索引")
+    rebuild.add_argument("--knowledge-dir", default="knowledge", help="知识库目录")
+
     return parser
 
 
@@ -296,6 +322,8 @@ def main(argv: Optional[list] = None) -> int:
         return cmd_session(args)
     elif args.command == "tools":
         return cmd_tools(args)
+    elif args.command == "rebuild-index":
+        return cmd_rebuild_index(args)
     else:
         # 无子命令 -> 进入交互式 REPL
         from agent.repl.repl import start_repl

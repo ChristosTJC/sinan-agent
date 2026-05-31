@@ -126,3 +126,57 @@ def test_compress_result_truncation_accuracy():
     compressed = task.compress_result(max_chars=400)
     # 保留 200 + 200 = 400 字符，截断 600 字符
     assert "已截断 600 字符" in compressed
+
+
+# ============================================================
+# TaskManager 测试
+# ============================================================
+
+from agent.tasks.manager import TaskManager
+
+
+def test_task_manager_create_task():
+    """测试任务创建"""
+    manager = TaskManager()
+
+    task = manager.create_task(
+        name="test_tool",
+        type=TaskType.TOOL_CALL,
+        executor=lambda: "result",
+        args={"port": "/dev/ttyUSB0"},
+        dependencies=[],
+    )
+
+    assert task.id in manager.tasks
+    assert task.status == TaskStatus.PENDING
+    assert len(manager.tasks) == 1
+
+
+def test_task_manager_dependencies():
+    """测试任务依赖管理"""
+    manager = TaskManager()
+
+    task_a = manager.create_task("task_a", TaskType.TOOL_CALL, lambda: "A", {}, [])
+    task_b = manager.create_task("task_b", TaskType.TOOL_CALL, lambda: "B", {}, [task_a.id])
+
+    ready_tasks = manager.get_ready_tasks()
+    assert task_a.id in [t.id for t in ready_tasks]
+    assert task_b.id not in [t.id for t in ready_tasks]
+
+    # 标记 task_a 完成
+    manager.update_status(task_a.id, TaskStatus.COMPLETED)
+
+    ready_tasks = manager.get_ready_tasks()
+    assert task_b.id in [t.id for t in ready_tasks]
+
+
+def test_task_manager_circular_dependency():
+    """测试循环依赖检测"""
+    manager = TaskManager()
+
+    task_a = manager.create_task("task_a", TaskType.TOOL_CALL, lambda: "A", {}, [])
+    task_b = manager.create_task("task_b", TaskType.TOOL_CALL, lambda: "B", {}, [task_a.id])
+
+    # 尝试创建循环依赖
+    with pytest.raises(ValueError, match="循环依赖"):
+        manager.update_dependencies(task_a.id, [task_b.id])

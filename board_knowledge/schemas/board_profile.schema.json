@@ -1,0 +1,222 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sinan-embedded-agent/schemas/board_profile.schema.json",
+  "title": "嵌入式开发板配置文件 Schema",
+  "description": "司南嵌入式智能体——板级知识库的板卡配置文件 JSON Schema 校验规范",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "board_id",
+    "display_name",
+    "mcu",
+    "ports",
+    "peripherals"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "此配置文件的 Schema 版本号，遵循语义化版本 (SemVer)"
+    },
+    "board_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_]+$",
+      "description": "板卡唯一标识符，仅允许小写字母、数字和下划线",
+      "examples": ["example_stm32f407", "example_esp32s3"]
+    },
+    "display_name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "板卡的人类可读名称"
+    },
+    "description": {
+      "type": "string",
+      "description": "板卡的简要描述，说明其主要用途和特性"
+    },
+    "mcu": {
+      "type": "object",
+      "required": ["arch", "clock", "flash", "ram", "voltage"],
+      "properties": {
+        "model": {
+          "type": "string",
+          "description": "MCU 型号全称"
+        },
+        "manufacturer": {
+          "type": "string",
+          "description": "MCU 制造商"
+        },
+        "arch": {
+          "type": "string",
+          "description": "处理器架构 (e.g., Cortex-M4, Xtensa LX7, RISC-V)"
+        },
+        "clock": {
+          "type": "string",
+          "description": "最大主频，含单位 (e.g., 168MHz, 240MHz)"
+        },
+        "flash": {
+          "type": "string",
+          "description": "Flash 容量，含单位 (e.g., 512KB, 8MB)"
+        },
+        "ram": {
+          "type": "string",
+          "description": "SRAM 容量，含单位 (e.g., 192KB, 512KB)"
+        },
+        "psram": {
+          "type": "string",
+          "description": "PSRAM 容量（可选，如 ESP32-S3）"
+        },
+        "voltage": {
+          "type": "string",
+          "description": "工作电压范围 (e.g., 1.8V-3.6V, 3.0V-3.6V)"
+        },
+        "cores": {
+          "type": "integer",
+          "description": "处理器核心数"
+        }
+      },
+      "additionalProperties": true
+    },
+    "ports": {
+      "type": "array",
+      "description": "板卡对外接口列表",
+      "items": {
+        "type": "object",
+        "required": ["name", "type", "pins"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "接口名称 (e.g., USART1, I2C1, SWD)"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "usb",
+              "serial",
+              "jtag",
+              "swd",
+              "gpio",
+              "i2c",
+              "spi",
+              "network",
+              "power",
+              "pwm",
+              "can",
+              "i2s",
+              "adc",
+              "dac",
+              "sdio"
+            ],
+            "description": "接口类型"
+          },
+          "pins": {
+            "type": "object",
+            "description": "信号到引脚的映射关系。键为信号名称，值为引脚编号",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "connector": {
+            "type": "string",
+            "description": "物理连接器类型 (e.g., Dupont 2.54mm, USB-C, PH 2.0)"
+          },
+          "notes": {
+            "type": "string",
+            "description": "关于此接口的附加注意事项"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "peripherals": {
+      "type": "array",
+      "description": "板载外设列表",
+      "items": {
+        "type": "object",
+        "required": ["name", "kind"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "外设名称 (e.g., MPU6050, SSD1306)"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "sensor",
+              "actuator",
+              "display",
+              "communication",
+              "camera",
+              "storage",
+              "power",
+              "led",
+              "button",
+              "interface"
+            ],
+            "description": "外设类别"
+          },
+          "model": {
+            "type": "string",
+            "description": "外设型号"
+          },
+          "protocol": {
+            "type": "string",
+            "description": "通信协议 (e.g., I2C, SPI, UART, GPIO)"
+          },
+          "address": {
+            "type": "string",
+            "description": "总线地址 (e.g., I2C 地址 '0x68')"
+          },
+          "bus": {
+            "type": "string",
+            "description": "所在总线接口名称 (e.g., I2C1, SPI2)"
+          },
+          "pins": {
+            "type": "object",
+            "description": "外设专用引脚映射",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "notes": {
+            "type": "string",
+            "description": "关于此外设的附加注意事项"
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "common_pitfalls": {
+      "type": "array",
+      "description": "此板卡使用过程中常见的陷阱与注意事项",
+      "items": {
+        "type": "string"
+      }
+    },
+    "safety_notes": {
+      "type": "array",
+      "description": "安全提示，包括电压限制、静电防护等",
+      "items": {
+        "type": "string"
+      }
+    },
+    "programming_interfaces": {
+      "type": "array",
+      "description": "可用的编程/烧录接口",
+      "items": {
+        "type": "string"
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "description": "元数据（作者、创建日期、文档链接等）",
+      "properties": {
+        "author": { "type": "string" },
+        "created": { "type": "string", "format": "date" },
+        "updated": { "type": "string", "format": "date" },
+        "datasheet_url": { "type": "string", "format": "uri" },
+        "schematic_url": { "type": "string", "format": "uri" }
+      }
+    }
+  },
+  "additionalProperties": false
+}

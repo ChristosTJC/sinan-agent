@@ -1,0 +1,32 @@
+name: ESP32-S3
+manufacturer: Espressif
+arch: Xtensa LX7 (dual-core)
+max_clock: 240MHz
+flash: up to 16MB (external)
+psram: up to 8MB (optional)
+ram: 512KB SRAM
+voltage: 3.0V-3.6V
+key_features:
+  - WiFi 802.11 b/g/n (2.4GHz)
+  - Bluetooth 5.0 LE
+  - USB OTG (native USB Serial/JTAG)
+  - 2x I2C, 4x SPI, 3x UART
+  - 2x I2S
+  - 2x 12-bit ADC
+  - Touch sensor (14 channels)
+  - LED PWM (8 channels)
+  - RMT (remote control peripheral)
+strapping_pins:
+  - "GPIO0: 低电平=下载模式, 高电平=运行模式"
+  - "GPIO46: 决定 VDD_SPI 电压 (1.8V/3.3V)"
+common_pitfalls:
+  - "GPIO0 按住再上电进入下载模式"
+  - "ESP32-S3 USB Serial/JTAG 占用 GPIO19/20，用于串口通信无需外接 USB-UART"
+  - "ADC2 在 WiFi 开启时不可用（被 WiFi 占用）"
+  - "GPIO35/36/37 仅输入，无内部上拉"
+  - "PSRAM 需要在 menuconfig 中启用，且与 Flash 共用 SPI 总线"
+  - "深度睡眠唤醒后程序从 main() 重新开始执行"
+programming_interfaces:
+  - USB Serial/JTAG (GPIO19/20)
+  - UART0 (GPIO43/44, 默认串口)
+  - esptool (UART 或 USB)

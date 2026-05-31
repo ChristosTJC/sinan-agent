@@ -214,54 +214,38 @@ class SinanREPL:
 
     def _init_memory_store(self):
         """初始化 L1 核心记忆。"""
-        try:
-            from agent.memory.core_memory import MemoryStore
-            store = MemoryStore()
-            store.load_from_disk(self._sinan_home / "memories")
-            logger.info("L1 核心记忆已加载")
-            return store
-        except Exception as exc:
-            logger.warning("L1 记忆初始化失败: %s", exc)
-            return None
+        from agent.memory.core_memory import MemoryStore
+        store = MemoryStore()
+        store.load_from_disk(self._sinan_home / "memories")
+        logger.info("L1 核心记忆已加载 (%d 条)", store.fact_count)
+        return store
 
     def _init_skill_loader(self):
         """初始化技能加载器。"""
-        try:
-            from agent.skills import get_skill_loader
-            loader = get_skill_loader()
-            logger.info("Skills 已加载: %d 个", len(loader.load_all()))
-            return loader
-        except Exception as exc:
-            logger.warning("Skills 初始化失败: %s", exc)
-            return None
+        from agent.skills import get_skill_loader
+        loader = get_skill_loader()
+        logger.info("Skills 已加载: %d 个", len(loader.load_all()))
+        return loader
 
     def _init_knowledge_base(self):
         """初始化 L3 知识库（项目知识 + 用户知识双路径）。"""
-        try:
-            from agent.memory.knowledge_base import KnowledgeBase
-            project_kb_dir = Path(__file__).resolve().parent.parent.parent / "knowledge"
-            user_kb_dir = self._sinan_home / "knowledge"
-            kb = KnowledgeBase(kb_dir=project_kb_dir, user_kb_dir=user_kb_dir)
-            logger.info("L3 知识库已初始化 (project=%s, user=%s)", project_kb_dir, user_kb_dir)
-            return kb
-        except Exception as exc:
-            logger.warning("L3 知识库初始化失败: %s", exc)
-            return None
+        from agent.memory.knowledge_base import KnowledgeBase
+        project_kb_dir = Path(__file__).resolve().parent.parent.parent / "knowledge"
+        user_kb_dir = self._sinan_home / "knowledge"
+        kb = KnowledgeBase(kb_dir=project_kb_dir, user_kb_dir=user_kb_dir)
+        logger.info("L3 知识库已初始化 (project=%s, user=%s)", project_kb_dir, user_kb_dir)
+        return kb
 
     def _init_session_db(self):
         """初始化 L2 会话数据库并创建新会话。"""
-        try:
-            from agent.memory.session_db import SessionDB
-            db = SessionDB(self._sinan_home / "sessions")
-            session_id = db.create_session(
-                project=db.detect_project(),
-                model=self.client.model,
-            )
-            logger.info("L2 会话已创建: %s", session_id)
-            return db, session_id
-        except Exception as exc:
-            logger.warning("L2 会话数据库初始化失败: %s", exc)
-            return None, None
+        from agent.memory.session_db import SessionDB
+        db = SessionDB(self._sinan_home / "sessions")
+        session_id = db.create_session(
+            project=db.detect_project(),
+            model=self.client.model,
+        )
+        logger.info("L2 会话已创建: %s", session_id)
+        return db, session_id
 
     def _build_system_prompt(self) -> str:
         """构建动态系统提示：基础人设 + 运行时上下文 + L1 记忆 + Skills。"""

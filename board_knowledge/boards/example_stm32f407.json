@@ -1,0 +1,183 @@
+{
+  "schema_version": "1.0.0",
+  "board_id": "example_stm32f407",
+  "display_name": "STM32F407VET6 核心板 (Cortex-M4)",
+  "description": "基于 STM32F407VET6 的 ARM Cortex-M4 核心板，带 FPU 和 DSP 指令集，适用于机器人控制、电机驱动、实时数据采集等场景。引出全部可用 IO，通过排针与底板连接。",
+
+  "mcu": {
+    "model": "STM32F407VET6",
+    "manufacturer": "STMicroelectronics",
+    "arch": "ARM Cortex-M4",
+    "clock": "168MHz",
+    "flash": "512KB",
+    "ram": "192KB",
+    "voltage": "1.8V-3.6V",
+    "cores": 1
+  },
+
+  "ports": [
+    {
+      "name": "USART1",
+      "type": "serial",
+      "pins": {
+        "TX": "PA9",
+        "RX": "PA10"
+      },
+      "connector": "Dupont 2.54mm (排针引出)",
+      "notes": "默认调试串口，常用波特率 115200。PA9/PA10 在 LQFP100 封装中位于第 42/43 脚"
+    },
+    {
+      "name": "I2C1",
+      "type": "i2c",
+      "pins": {
+        "SCL": "PB6",
+        "SDA": "PB7"
+      },
+      "connector": "Dupont 2.54mm",
+      "notes": "I2C1 默认引脚（复用功能 AF4）。需外接 4.7kΩ 上拉电阻到 3.3V"
+    },
+    {
+      "name": "SPI1",
+      "type": "spi",
+      "pins": {
+        "SCLK": "PA5",
+        "MOSI": "PA7",
+        "MISO": "PA6",
+        "NSS": "PA4"
+      },
+      "connector": "Dupont 2.54mm",
+      "notes": "SPI1 挂载在高速 APB2 总线，最大时钟 42 MHz"
+    },
+    {
+      "name": "SWD",
+      "type": "swd",
+      "pins": {
+        "SWDIO": "PA13",
+        "SWCLK": "PA14"
+      },
+      "connector": "4-pin SH 1.0mm 或 排针",
+      "notes": "ST-Link / J-Link 调试烧录接口。PA13/PA14 默认即为 SWD 功能，无需额外配置"
+    },
+    {
+      "name": "USB_OTG",
+      "type": "usb",
+      "pins": {
+        "USB_DM": "PA11",
+        "USB_DP": "PA12",
+        "VBUS": "PA9"
+      },
+      "connector": "Micro-USB",
+      "notes": "USB OTG FS（全速 12 Mbps），可配置为 Device 或 Host 模式。需要 48 MHz 精准时钟（由 HSE+PLL 提供，或外接晶振）"
+    },
+    {
+      "name": "power_3v3",
+      "type": "power",
+      "pins": {
+        "3V3": "3.3V",
+        "GND": "GND"
+      },
+      "connector": "Dupont 2.54mm",
+      "notes": "3.3V 电源轨。板载 LDO（AMS1117-3.3），最大输出 800 mA"
+    },
+    {
+      "name": "power_5v",
+      "type": "power",
+      "pins": {
+        "5V": "5V",
+        "GND": "GND"
+      },
+      "connector": "Dupont 2.54mm / USB 供电",
+      "notes": "5V 输入，通过 USB 或外部电源。板载防反接二极管"
+    }
+  ],
+
+  "peripherals": [
+    {
+      "name": "MPU6050",
+      "kind": "sensor",
+      "model": "MPU6050",
+      "protocol": "I2C",
+      "address": "0x68",
+      "bus": "I2C1",
+      "pins": {
+        "SCL": "PB6",
+        "SDA": "PB7",
+        "AD0": "GND",
+        "INT": "PC4"
+      },
+      "notes": "6 轴 IMU（3 轴加速度 + 3 轴陀螺仪）。上电后默认处于 SLEEP 模式，需向 PWR_MGMT_1 (0x6B) 写 0x00 唤醒。AD0 接 GND 时 I2C 地址为 0x68"
+    },
+    {
+      "name": "SSD1306 OLED",
+      "kind": "display",
+      "model": "SSD1306 128x64",
+      "protocol": "I2C",
+      "address": "0x3C",
+      "bus": "I2C1",
+      "pins": {
+        "SCL": "PB6",
+        "SDA": "PB7"
+      },
+      "notes": "128×64 单色 OLED 显示屏，I2C 接口。驱动芯片 SSD1306，需要初始化命令序列。与 MPU6050 共享 I2C1 总线，注意地址不要冲突"
+    },
+    {
+      "name": "SG90 舵机",
+      "kind": "actuator",
+      "model": "SG90",
+      "protocol": "GPIO",
+      "bus": "TIM2_CH1",
+      "pins": {
+        "Signal": "PA0"
+      },
+      "notes": "9g 微型舵机，PWM 控制（500-2500 μs 脉宽对应 0-180°），频率 50 Hz。PA0 复用为 TIM2_CH1 输出 PWM。舵机堵转电流约 750 mA，不建议直接用 3.3V 供电，应使用外部 5V 电源"
+    },
+    {
+      "name": "板载 LED",
+      "kind": "led",
+      "pins": {
+        "LED": "PC13"
+      },
+      "notes": "低电平点亮（active low），通过 1kΩ 限流电阻连接。可用于心跳指示或调试输出"
+    },
+    {
+      "name": "用户按键",
+      "kind": "button",
+      "pins": {
+        "BUTTON": "PA0"
+      },
+      "notes": "BOOT 或用户按键（取决于板卡设计）。通常一端接 GND，另一端通过 10kΩ 上拉电阻到 3.3V。按下时为低电平。⚠ 如果 PA0 同时用于 PWM 输出（SG90 舵机），注意功能复用冲突"
+    }
+  ],
+
+  "common_pitfalls": [
+    "BOOT0 引脚：低电平 = 从 Flash 启动（正常运行），高电平 = 从系统存储器启动（出厂 Bootloader 模式）。烧录前请确认 BOOT0 为低电平",
+    "PA13/PA14 默认是 SWD 调试口，在代码中千万不要将它们配置为普通 GPIO 输出，否则下次无法烧录（需用串口 Bootloader 擦除后恢复）",
+    "PA0 被多个外设（SG90 舵机 PWM 和用户按键）共用，实际使用时请确保只有一个功能处于激活状态",
+    "I2C1 总线需外接 4.7kΩ 上拉电阻到 3.3V。如果同时挂载 MPU6050 和 SSD1306，注意地址不要冲突（0x68 vs 0x3C 不冲突）",
+    "ADC 的 VREF+ 引脚默认与 VDDA 相连，板上未外接独立基准电压源。如需精确模拟测量，建议外接 TL431 或 REF3033 等基准芯片",
+    "USB OTG FS 需要 48 MHz 精准时钟。如果使用内部 HSI (16 MHz) 配合 PLL 倍频，实际频率存在 ±1% 偏差。某些 USB 主机可能无法识别，建议外接 8 MHz HSE 晶振",
+    "SG90 舵机不可直接从 3.3V 引脚取电——启动瞬间电流峰值可能超过 1A，会导致 MCU 掉电复位。应使用外部 5V 独立供电，GND 需共地",
+    "备用电池 VBAT 引脚：如果不使用 RTC，可将其接 VDD；如需掉电保存 RTC，应接 CR1220 等 3V 纽扣电池"
+  ],
+
+  "safety_notes": [
+    "绝对最大额定值：VDD 不得超过 4.0V，I/O 引脚输入电压不得超过 VDD+0.3V（即约 3.6V）。超压会永久损坏芯片",
+    "焊接或接线前请断开 USB 电源。务必佩戴防静电手环或先触摸接地金属释放静电",
+    "IO 引脚最大灌/拉电流：单个引脚 ±25 mA 绝对值，所有引脚总和不超过 150 mA。驱动大电流负载（如继电器、电机）必须使用三极管或 MOS 管驱动",
+    "芯片工作温度范围：-40°C 至 +85°C（工业级），请注意散热，避免长时间满负荷导致过热",
+    "反接保护：板载二极管可防止电源反接，但反向电压超过二极管耐压（约 40V）时仍会损坏 LDO"
+  ],
+
+  "programming_interfaces": [
+    "SWD (ST-Link V2/V3, J-Link, DAP-Link)",
+    "USART1 bootloader (PA9/PA10, 通过 Flash Loader Demonstrator 或 stm32flash)",
+    "USB DFU (Device Firmware Upgrade, 通过 PA11/PA12)"
+  ],
+
+  "metadata": {
+    "author": "司南嵌入式智能体团队",
+    "created": "2026-05-29",
+    "datasheet_url": "https://www.st.com/resource/en/datasheet/stm32f407ve.pdf",
+    "schematic_url": "https://www.st.com/resource/en/reference_manual/dm00031020-stm32f405-415-stm32f407-417-stm32f427-437-advanced-arm-based-32-bit-mcus-stmicroelectronics.pdf"
+  }
+}

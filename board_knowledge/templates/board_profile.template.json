@@ -1,0 +1,120 @@
+{
+  "$comment": "==================== 司南嵌入式智能体 — 板卡配置模板 ====================",
+  "$comment_instructions": [
+    "1. 复制此模板，将 board_id 替换为你的板卡唯一标识符",
+    "2. 填入真实的 MCU / 接口 / 外设信息",
+    "3. \"$comment\" 开头的字段为注释，最终保存时可删除",
+    "4. 所有引脚名称请以实际原理图或丝印为准",
+    "5. 使用 agent/board_knowledge/validator.py 校验你的配置文件是否合规"
+  ],
+
+  "schema_version": "1.0.0",
+
+  "$comment_board_id": "板卡唯一标识符，仅能使用小写字母、数字和下划线",
+  "board_id": "my_custom_board",
+
+  "$comment_display_name": "板卡的人类可读名称，可包含中文",
+  "display_name": "我的自定义开发板",
+
+  "$comment_description": "简要描述板卡用途",
+  "description": "基于 STM32F103C8T6 的个人项目开发板",
+
+  "mcu": {
+    "$comment_mcu": "MCU 详细信息 — model 和 manufacturer 为选填，arch/clock/flash/ram/voltage 为必填",
+    "model": "STM32F103C8T6",
+    "manufacturer": "STMicroelectronics",
+    "arch": "ARM Cortex-M3",
+    "clock": "72MHz",
+    "flash": "64KB",
+    "ram": "20KB",
+    "voltage": "2.0V-3.6V",
+    "cores": 1
+  },
+
+  "ports": [
+    {
+      "$comment_port_example": "每个端口必须包含 name、type、pins。connector 和 notes 为选填",
+      "name": "USART1",
+      "type": "serial",
+      "pins": {
+        "TX": "PA9",
+        "RX": "PA10"
+      },
+      "connector": "Dupont 2.54mm",
+      "notes": "默认调试串口，波特率 115200"
+    },
+    {
+      "name": "SWD",
+      "type": "swd",
+      "pins": {
+        "SWCLK": "PA14",
+        "SWDIO": "PA13"
+      },
+      "connector": "4-pin SH 1.0mm",
+      "notes": "调试/烧录接口，注意 PA13/PA14 如果用作 GPIO 会影响烧录"
+    },
+    {
+      "name": "I2C1",
+      "type": "i2c",
+      "pins": {
+        "SCL": "PB6",
+        "SDA": "PB7"
+      },
+      "connector": "Dupont 2.54mm",
+      "notes": "需要外接 4.7kΩ 上拉电阻到 3.3V"
+    },
+    {
+      "name": "power_3v3",
+      "type": "power",
+      "pins": {
+        "3V3": "3V3",
+        "GND": "GND"
+      },
+      "connector": "Dupont 2.54mm",
+      "notes": "3.3V 电源输出，最大电流 500mA"
+    }
+  ],
+
+  "peripherals": [
+    {
+      "$comment_peripheral_example": "外设列表中每项需包含 name 和 kind。protocol/address/bus/pins/notes 可选",
+      "name": "板载 LED",
+      "kind": "led",
+      "pins": {
+        "LED": "PC13"
+      },
+      "notes": "低电平点亮（active low）"
+    },
+    {
+      "name": "MPU6050",
+      "kind": "sensor",
+      "model": "MPU6050",
+      "protocol": "I2C",
+      "address": "0x68",
+      "bus": "I2C1",
+      "notes": "上电后需向 PWR_MGMT_1 写 0x00 唤醒"
+    }
+  ],
+
+  "common_pitfalls": [
+    "示例：SWD 接口的 PA13/PA14 如果被配置为 GPIO 输出，将无法再次烧录程序",
+    "示例：I2C 总线切勿遗漏上拉电阻，否则 SDA/SCL 始终为低电平"
+  ],
+
+  "safety_notes": [
+    "示例：请勿超过 MCU 的最大工作电压（3.6V），否则会永久损坏芯片",
+    "示例：焊接或接线前请断开电源，注意静电防护（ESD）"
+  ],
+
+  "programming_interfaces": [
+    "SWD (ST-Link / J-Link)",
+    "USART1 bootloader"
+  ],
+
+  "metadata": {
+    "$comment_metadata": "元数据为选填，author、created、updated 可帮助团队成员了解配置的维护信息",
+    "author": "你的名字",
+    "created": "2026-05-29",
+    "datasheet_url": "https://example.com/datasheet.pdf"
+  }
+}

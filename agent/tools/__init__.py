@@ -17,6 +17,16 @@ import inspect
 import logging
 import re
 from typing import Any, Callable, Optional
+from enum import Enum
+
+
+class DangerLevel(str, Enum):
+    """工具危险等级"""
+    SAFE = "safe"       # 只读，无副作用
+    LOW = "low"         # 可逆操作
+    MEDIUM = "medium"   # 需确认的写操作
+    HIGH = "high"       # 不可逆操作（擦除、格式化）
+
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +91,59 @@ def _parse_params_from_docstring(fn: Callable) -> dict:
 
     return params
 
+
+import time as _time
+import json as _json
+from datetime import datetime as _datetime
+from pathlib import Path as _Path
+import threading as _threading
+
+
+class AuditLogger:
+    """结构化审计日志记录器 —— 记录每次工具调用的完整上下文。
+
+    Attributes:
+        _log_path: 审计日志文件路径
+        _lock: 线程安全锁
+    """
+    def __init__(self, log_dir: str = ""):
+        self._log_dir = _Path(log_dir) if log_dir else _Path.home() / ".sinan" / "audit"
+        self._log_dir.mkdir(parents=True, exist_ok=True)
+        self._lock = _threading.Lock()
+
+    def log_tool_call(self, tool_name: str, danger_level: str, arguments: dict,
+                      result: dict, duration_ms: float, success: bool):
+        """记录一次工具调用。"""
+        entry = {
+            "timestamp": _datetime.now().isoformat(),
+            "tool": tool_name,
+            "danger_level": danger_level,
+            "arguments": {k: v for k, v in arguments.items() if k != "data"},
+            "success": success,
+            "duration_ms": round(duration_ms, 2),
+            "result_summary": str(result.get("error", "ok"))[:200] if not success else "ok"
+        }
+        log_file = self._log_dir / f"audit-{_datetime.now().strftime('%Y%m%d')}.jsonl"
+        with self._lock:
+            with open(log_file, "a", encoding="utf-8") as f:
+                f.write(_json.dumps(entry, ensure_ascii=False) + "\n")
+
+    def query(self, tool_name: str = None, date: str = None, limit: int = 100) -> list[dict]:
+        """查询审计日志。"""
+        results = []
+        pattern = f"audit-{date}.jsonl" if date else "audit-*.jsonl"
+        for log_file in sorted(self._log_dir.glob(pattern), reverse=True):
+            with open(log_file, "r", encoding="utf-8") as f:
+                for line in f:
+                    entry = _json.loads(line.strip())
+                    if tool_name and entry.get("tool") != tool_name:
+                        continue
+                    results.append(entry)
+                    if len(results) >= limit:
+                        return results
+        return results
+
+
 # ---------------------------------------------------------------------------
 # 工具注册中心
 # ---------------------------------------------------------------------------
@@ -102,7 +165,10 @@ class ToolRegistry:
         """初始化工具注册中心。"""
         self._tools: dict[str, Callable] = {}
         self._meta: dict[str, dict] = {}       # {name: {description, parameters}}
-        self._dangerous: set[str] = set()       # 危险工具集合
+        self._dangerous: set[str] = set()       # 危险工具集合 (已弃用，保留向后兼容)
+        self._danger_levels: dict[str, DangerLevel] = {}
+        self._timeouts: dict[str, float] = {}
+        self._audit = AuditLogger()
         self._schemas: Optional[list[dict]] = None
         self._memory_tools_registered: bool = False
 
@@ -119,6 +185,8 @@ class ToolRegistry:
         description: str = "",
         parameters: Optional[dict] = None,
         dangerous: bool = False,
+        danger_level: DangerLevel = DangerLevel.SAFE,
+        timeout_sec: float = 30.0,
         **_: Any,
     ) -> None:
         """注册一个工具。
@@ -128,7 +196,9 @@ class ToolRegistry:
             handler: 工具对应的可调用对象。
             description: 工具描述 (可从 docstring 自动提取)。
             parameters: 参数 schema dict。为 None 时尝试从 docstring 解析。
-            dangerous: 是否为危险工具 (需要用户确认)。
+            dangerous: 是否为危险工具 (已弃用，请改用 danger_level)。
+            danger_level: 工具危险等级。
+            timeout_sec: 工具执行超时时间 (秒)。
         """
         if handler is None:
             handler = func
@@ -144,10 +214,13 @@ class ToolRegistry:
         if parameters is None:
             parameters = _parse_params_from_docstring(handler)
         self._meta[name] = {"description": description, "parameters": parameters}
+        # 已弃用: 保留 _dangerous 集合向后兼容
         if dangerous:
             self._dangerous.add(name)
+        self._danger_levels[name] = danger_level
+        self._timeouts[name] = timeout_sec
         self._schemas = None
-        logger.debug("工具已注册: %s (dangerous=%s)", name, dangerous)
+        logger.debug("工具已注册: %s (danger_level=%s, timeout=%.1fs)", name, danger_level.value, timeout_sec)
 
     def register_all(self, tools: dict[str, Callable]) -> None:
         """批量注册工具。
@@ -175,7 +248,21 @@ class ToolRegistry:
         Returns:
             True 表示危险工具。
         """
-        return name in self._dangerous
+        # 已弃用: 保留 _dangerous 集合向后兼容，新代码应使用 get_danger_level()
+        if name in self._dangerous:
+            return True
+        return self._danger_levels.get(name, DangerLevel.SAFE) != DangerLevel.SAFE
+
+    def get_danger_level(self, name: str) -> DangerLevel:
+        """获取工具的 DangerLevel 等级。
+
+        Args:
+            name: 工具名称。
+
+        Returns:
+            DangerLevel 枚举值。
+        """
+        return self._danger_levels.get(name, DangerLevel.SAFE)
 
     # ------------------------------------------------------------------
     # 发现
@@ -293,7 +380,7 @@ class ToolRegistry:
             self.register(
                 "serial_write", _serial_write_handler,
                 description="向串口写入数据",
-                dangerous=True,
+                danger_level=DangerLevel.HIGH, timeout_sec=10.0,
                 parameters={
                     "port": {"type": "string", "description": "串口端口路径", "required": True},
                     "baudrate": {"type": "integer", "description": "波特率 (默认 115200)", "required": False},
@@ -317,6 +404,7 @@ class ToolRegistry:
             self.register(
                 "build_firmware", _build_firmware_handler,
                 description="编译固件",
+                danger_level=DangerLevel.MEDIUM, timeout_sec=300.0,
                 parameters={
                     "project_path": {"type": "string", "description": "固件项目根目录路径", "required": True},
                     "target": {"type": "string", "description": "编译目标名 (cmake/make)", "required": False},
@@ -341,7 +429,7 @@ class ToolRegistry:
             self.register(
                 "flash_firmware", _flash_firmware_handler,
                 description="烧写固件到设备",
-                dangerous=True,
+                danger_level=DangerLevel.HIGH, timeout_sec=120.0,
                 parameters={
                     "project_path": {"type": "string", "description": "固件项目根目录路径", "required": True},
                     "port": {"type": "string", "description": "目标串口/调试端口路径", "required": True},
@@ -406,6 +494,7 @@ class ToolRegistry:
             self.register(
                 "device_call", _device_call_handler,
                 description="调用设备端远程工具",
+                danger_level=DangerLevel.HIGH, timeout_sec=30.0,
                 parameters={
                     "host": {"type": "string", "description": "设备 IP 或主机名", "required": True},
                     "port": {"type": "integer", "description": "设备端口 (默认 5555)", "required": False},
@@ -544,7 +633,7 @@ class ToolRegistry:
             self.register(
                 "write_file", _write_file_fn,
                 description="写入内容到文件（创建或覆盖）",
-                dangerous=True,
+                danger_level=DangerLevel.MEDIUM,
                 parameters={
                     "file_path": {"type": "string", "description": "文件绝对路径 [required]", "required": True},
                     "content": {"type": "string", "description": "要写入的内容 [required]", "required": True},
@@ -560,7 +649,7 @@ class ToolRegistry:
             self.register(
                 "edit_file", _edit_file_fn,
                 description="精确字符串替换编辑文件（old_string → new_string）",
-                dangerous=True,
+                danger_level=DangerLevel.MEDIUM,
                 parameters={
                     "file_path": {"type": "string", "description": "文件绝对路径 [required]", "required": True},
                     "old_string": {"type": "string", "description": "要替换的原文本（必须精确匹配） [required]", "required": True},
@@ -688,6 +777,19 @@ class ToolRegistry:
         self._schemas = schemas
         return schemas
 
+    def get_audit_logs(self, tool_name: str = None, date: str = None, limit: int = 100) -> list[dict]:
+        """查询审计日志。
+
+        Args:
+            tool_name: 按工具名过滤 (可选)。
+            date: 按日期过滤，格式 YYYYMMDD (可选)。
+            limit: 最大返回条目数 (默认 100)。
+
+        Returns:
+            审计日志条目列表。
+        """
+        return self._audit.query(tool_name=tool_name, date=date, limit=limit)
+
     # ------------------------------------------------------------------
     # 调用
     # ------------------------------------------------------------------
@@ -719,11 +821,18 @@ class ToolRegistry:
         handler = self._tools.get(name)
         if handler is None:
             available = ", ".join(sorted(self._tools.keys()))
-            return {
+            result = {
                 "success": False,
                 "error": f"工具 '{name}' 不存在。可用工具: {available}",
             }
+            self._audit.log_tool_call(name, DangerLevel.SAFE.value, arguments, result, 0.0, False)
+            return result
 
+        danger_level = self.get_danger_level(name)
+        if danger_level == DangerLevel.HIGH:
+            logger.warning("调用 HIGH 危险等级工具: %s", name)
+
+        start_time = _time.time()
         try:
             result = handler(arguments)
             # 确保返回值是 dict
@@ -734,7 +843,15 @@ class ToolRegistry:
             return result
         except Exception as exc:
             logger.exception("工具调用异常 '%s': %s", name, exc)
-            return {"success": False, "error": f"工具执行异常: {exc}"}
+            result = {"success": False, "error": f"工具执行异常: {exc}"}
+            return result
+        finally:
+            duration_ms = (_time.time() - start_time) * 1000.0
+            success = result.get("success", False)
+            self._audit.log_tool_call(name, danger_level.value, arguments, result, duration_ms, success)
+            timeout = self._timeouts.get(name)
+            if timeout and duration_ms > timeout * 1000:
+                logger.warning("工具 '%s' 执行超时: %.0fms (限制 %.0fs)", name, duration_ms, timeout)
 
 
 # ---------------------------------------------------------------------------
@@ -766,8 +883,8 @@ def get_registry() -> ToolRegistry:
 __all__ = [
     "ToolRegistry",
     "get_registry",
+    "DangerLevel",
+    "AuditLogger",
     "_extract_description",
     "_parse_params_from_docstring",
-    "cmake_builder",
-    "pyocd_flasher",
 ]

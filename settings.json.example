@@ -1,0 +1,50 @@
+{
+  "_comment": "司南 (Sinán) 配置文件示例 — 参考 Claude Code 风格",
+  "_comment2": "复制此文件到 ~/.sinan/settings.json 并修改",
+  "_comment3": "availableModels[0] 为启动默认模型",
+
+  "availableModels": [
+    {"label": "DeepSeek V4 Pro (Anthropic)", "model": "deepseek-v4-pro", "provider": "claude", "thinking": true},
+    {"label": "DeepSeek V4 Flash (Anthropic)", "model": "deepseek-v4-flash", "provider": "claude"},
+    {"label": "DeepSeek Chat (OpenAI)", "model": "deepseek-chat", "provider": "deepseek"},
+    {"label": "DeepSeek Reasoner (OpenAI)", "model": "deepseek-reasoner", "provider": "deepseek", "thinking": true}
+  ],
+
+  "maxTokens": 4096,
+  "temperature": null,
+  "thinking": null,
+  "effortLevel": null,
+
+  "env": {
+    "_comment": "环境变量（API Keys 和 Base URLs）",
+    "OLLAMA_BASE_URL": "http://localhost:11434/v1",
+
+    "_groq": "Groq (高速推理)",
+    "GENERIC_API_KEY": "",
+    "GENERIC_BASE_URL": "",
+
+    "_openai": "OpenAI",
+    "OPENAI_API_KEY": "",
+    "OPENAI_BASE_URL": "https://api.openai.com/v1",
+
+    "_claude": "Anthropic Claude / 兼容端点",
+    "ANTHROPIC_API_KEY": "",
+    "ANTHROPIC_BASE_URL": "https://api.anthropic.com"
+  },
+
+  "repl": {
+    "_comment": "REPL 设置",
+    "theme": "sinan",
+    "auto_complete": true,
+    "history_file": "~/.sinan/repl_history",
+    "max_history": 1000
+  },
+
+  "proxy": {
+    "_comment": "代理配置（可选）",
+    "http": "",
+    "https": ""
+  },
+
+  "debug": false
+}

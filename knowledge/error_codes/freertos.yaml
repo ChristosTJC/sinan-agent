@@ -1,0 +1,16 @@
+category: FreeRTOS Common Errors
+errors:
+  StackOverflow:
+    meaning: 任务栈溢出
+    solution: "增大任务栈大小 (configMINIMAL_STACK_SIZE) 或在任务创建时指定更大的栈深度"
+  HardFault:
+    meaning: 硬件错误异常
+    common_causes:
+      - "访问未对齐的内存地址"
+      - "访问无效的内存区域（NULL 指针/野指针）"
+      - "除以零"
+      - "未启用外设时钟就访问寄存器"
+      - "中断中使用了阻塞 API（应使用 FromISR 版本）"
+  AssertFailed:
+    meaning: configASSERT 断言失败
+    solution: "检查传入 FreeRTOS API 的参数，特别是中断优先级 (不能高于 configMAX_SYSCALL_INTERRUPT_PRIORITY)"

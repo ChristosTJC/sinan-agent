@@ -1,0 +1,24 @@
+name: MPU6050
+kind: IMU (6-axis)
+manufacturer: InvenSense/TDK
+protocol: I2C
+i2c_addr: "0x68 (AD0=GND) or 0x69 (AD0=VCC)"
+measurements:
+  - 3-axis gyroscope (±250/500/1000/2000 °/s)
+  - 3-axis accelerometer (±2/4/8/16 g)
+key_registers:
+  WHO_AM_I: "0x75 (should return 0x68)"
+  PWR_MGMT_1: "0x6B (bit 6: sleep, bit 3: temp disable, bits 2-0: clock source)"
+  SMPLRT_DIV: "0x19"
+  CONFIG: "0x1A (DLPF config)"
+  GYRO_CONFIG: "0x1B"
+  ACCEL_CONFIG: "0x1C"
+  ACCEL_XOUT_H: "0x3B (start of 14 data registers)"
+  INT_PIN_CFG: "0x37"
+  INT_ENABLE: "0x38"
+common_pitfalls:
+  - "上电后默认处于 SLEEP 模式，需要向 PWR_MGMT_1 写 0x00 唤醒"
+  - "I2C 地址的 LSB 由 AD0 引脚电平决定"
+  - "满量程范围越小精度越高，陀螺仪默认 ±250°/s"
+  - "读取数据寄存器需连续读 14 字节，第 0-15 字节分别对应各轴高/低字节"
+  - "DMP（数字运动处理器）需要加载固件才能使用"

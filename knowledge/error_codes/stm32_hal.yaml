@@ -1,0 +1,28 @@
+category: STM32 HAL Error Codes
+errors:
+  HAL_OK:
+    value: 0x00
+    meaning: 操作成功
+  HAL_ERROR:
+    value: 0x01
+    meaning: 通用错误
+  HAL_BUSY:
+    value: 0x02
+    meaning: 外设忙（DMA/I2C/SPI 传输未完成）
+    solution: 等待当前传输完成或调用 HAL_Abort()
+  HAL_TIMEOUT:
+    value: 0x03
+    meaning: 操作超时
+    common_causes:
+      - "I2C 从设备无响应（检查地址/上拉电阻/供电）"
+      - "等待标志位超时（检查中断优先级/时钟配置）"
+      - "DMA 传输超时（检查内存对齐/缓冲区大小）"
+  HAL_ERROR_I2C_BUSY:
+    meaning: I2C 总线忙
+    solution: "检查 SDA/SCL 是否被拉低，尝试发送 9 个 SCL 脉冲释放总线"
+  HAL_ERROR_I2C_AF:
+    meaning: I2C 无应答 (NACK)
+    solution: "检查从机地址、供电、上拉电阻"
+  HAL_ERROR_SPI_TIMEOUT:
+    meaning: SPI 传输超时
+    solution: "检查 SPI 模式(CPOL/CPHA)是否匹配，CS 引脚是否正确拉低"

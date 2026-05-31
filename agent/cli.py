@@ -207,20 +207,17 @@ def cmd_tools(args: argparse.Namespace) -> int:
     registry = get_registry()
 
     # 注册记忆工具（CLI 模式下也需要展示）
-    try:
-        from agent.memory.core_memory import MemoryStore
-        from agent.memory.knowledge_base import KnowledgeBase
-        from agent.memory.session_db import SessionDB
+    from agent.memory.core_memory import MemoryStore
+    from agent.memory.knowledge_base import KnowledgeBase
+    from agent.memory.session_db import SessionDB
 
-        project_kb_dir = Path(__file__).resolve().parent.parent / "knowledge"
-        user_kb_dir = SINAN_HOME / "knowledge"
-        store = MemoryStore()
-        store.load_from_disk(SINAN_HOME / "memories")
-        kb = KnowledgeBase(kb_dir=project_kb_dir, user_kb_dir=user_kb_dir)
-        db = SessionDB(SINAN_HOME / "sessions")
-        registry.set_memory_context(store, kb, db, SINAN_HOME)
-    except Exception:
-        pass  # 记忆工具注册失败不影响硬件工具显示
+    project_kb_dir = Path(__file__).resolve().parent.parent / "knowledge"
+    user_kb_dir = SINAN_HOME / "knowledge"
+    store = MemoryStore()
+    store.load_from_disk(SINAN_HOME / "memories")
+    kb = KnowledgeBase(kb_dir=project_kb_dir, user_kb_dir=user_kb_dir)
+    db = SessionDB(SINAN_HOME / "sessions")
+    registry.set_memory_context(store, kb, db, SINAN_HOME)
 
     tools = registry.list_tools()
 

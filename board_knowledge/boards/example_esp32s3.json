@@ -1,0 +1,164 @@
+{
+  "schema_version": "1.0.0",
+  "board_id": "example_esp32s3",
+  "display_name": "ESP32-S3-DevKitC-1 开发板",
+  "description": "乐鑫官方 ESP32-S3-DevKitC-1 开发板，搭载 ESP32-S3-WROOM-1 模组。双核 Xtensa LX7，内置 WiFi/BLE，原生 USB Serial/JTAG，适用于物联网、边缘 AI、无线传感器等场景。",
+
+  "mcu": {
+    "model": "ESP32-S3-WROOM-1",
+    "manufacturer": "Espressif",
+    "arch": "Xtensa LX7 (dual-core)",
+    "clock": "240MHz",
+    "flash": "8MB (模组内置)",
+    "ram": "512KB SRAM (内置) + 384KB ROM",
+    "psram": "2MB (Octal PSRAM, 模组内置, 可选)",
+    "voltage": "3.0V-3.6V",
+    "cores": 2
+  },
+
+  "ports": [
+    {
+      "name": "USB_Serial_JTAG",
+      "type": "usb",
+      "pins": {
+        "USB_D-": "GPIO19",
+        "USB_D+": "GPIO20"
+      },
+      "connector": "USB-C (板载)",
+      "notes": "原生 USB Serial/JTAG 控制器。无需外接 USB-UART 芯片即可实现串口通信和 JTAG 调试。插入 USB 后会在系统中枚举出两个设备：一个串口和一个 JTAG 调试口"
+    },
+    {
+      "name": "UART0",
+      "type": "serial",
+      "pins": {
+        "TX": "GPIO43",
+        "RX": "GPIO44"
+      },
+      "connector": "排针引出",
+      "notes": "ESP32-S3 的默认硬件串口（UART0）。注意：此 UART 与 USB Serial/JTAG 内部的 CDC-ACM 串口不是同一通道。通常开发时直接使用 USB Serial/JTAG 用作日志输出，无需连接 UART0 物理引脚"
+    },
+    {
+      "name": "I2C0",
+      "type": "i2c",
+      "pins": {
+        "SCL": "GPIO1",
+        "SDA": "GPIO2"
+      },
+      "connector": "排针引出",
+      "notes": "I2C 控制器 0。ESP32-S3 的 I2C 引脚可通过 GPIO Matrix 任意映射，此处为 DevKitC-1 推荐的常用引脚分配。需外接 4.7kΩ 上拉电阻到 3.3V"
+    },
+    {
+      "name": "SPI2",
+      "type": "spi",
+      "pins": {
+        "SCLK": "GPIO12",
+        "MOSI": "GPIO11",
+        "MISO": "GPIO13",
+        "CS0": "GPIO10"
+      },
+      "connector": "排针引出",
+      "notes": "SPI 控制器 2（SPI2_HOST，即 FSPI），用于外接 SPI Flash/PSRAM。也引至排针供用户使用。注意：SPI0/SPI1 用于内部 Flash 访问，用户不应直接使用"
+    },
+    {
+      "name": "power_3v3",
+      "type": "power",
+      "pins": {
+        "3V3": "3.3V",
+        "GND": "GND"
+      },
+      "connector": "排针引出",
+      "notes": "3.3V 电源轨。板载 LDO 最大输出约 500 mA，供外部传感器使用时需注意电流预算"
+    },
+    {
+      "name": "power_5v",
+      "type": "power",
+      "pins": {
+        "5V": "5V",
+        "GND": "GND"
+      },
+      "connector": "排针引出 / USB-C 供电",
+      "notes": "5V 输入（USB-C VBUS）。板载 3.3V LDO 为 ESP32-S3 供电。也可通过 5V 排针外部供电，但请勿同时用 USB 和外接电源（无电源选择电路）"
+    },
+    {
+      "name": "battery",
+      "type": "power",
+      "pins": {
+        "BAT+": "VBAT",
+        "BAT-": "GND"
+      },
+      "connector": "PH 2.0 电池座 (可选)",
+      "notes": "锂电池接口（部分版本预留焊盘）。ESP32-S3 无内置充电管理，外接锂电池需自行设计充放电电路"
+    }
+  ],
+
+  "peripherals": [
+    {
+      "name": "RGB LED (WS2812)",
+      "kind": "led",
+      "model": "WS2812-2020",
+      "protocol": "GPIO (RMT 或 bit-bang)",
+      "pins": {
+        "Data": "GPIO48"
+      },
+      "notes": "板载可寻址 RGB LED（WS2812 或兼容型号）。使用 RMT 外设或 SPI 驱动。注意：WS2812 需要精确的时序（0.4 μs / 0.85 μs 脉宽），务必关中断或使用 RMT 硬件发送数据。GPIO48 为 ESP32-S3 特有引脚（非 GPIO Matrix 管脚）"
+    },
+    {
+      "name": "QMI8658 IMU",
+      "kind": "sensor",
+      "model": "QMI8658",
+      "protocol": "I2C",
+      "address": "0x6B",
+      "bus": "I2C0",
+      "pins": {
+        "SCL": "GPIO1",
+        "SDA": "GPIO2"
+      },
+      "notes": "6 轴惯性测量单元（部分 DevKitC-1 版本板载）。相比 MPU6050 功耗更低。注意确认你的开发板版本是否焊接了该芯片，早期版本可能无此 IMU"
+    },
+    {
+      "name": "microSD 卡槽",
+      "kind": "storage",
+      "model": "microSD Socket",
+      "protocol": "SPI",
+      "bus": "SPI2",
+      "pins": {
+        "CS": "GPIO10",
+        "SCLK": "GPIO12",
+        "MOSI": "GPIO11",
+        "MISO": "GPIO13"
+      },
+      "notes": "microSD 卡通过 SPI 模式访问（非 SDMMC 4-bit 模式）。使用 SPI2_HOST。注意 SD 卡初始化和读写需要 FATFS 或 SD-MMC 库。SPI 模式速度比 SDMMC 慢，但兼容性更好"
+    }
+  ],
+
+  "common_pitfalls": [
+    "Strapping 引脚 —— GPIO0：低电平进入下载模式，高电平正常运行。按住 BOOT 键上电或 reset 即可进入下载模式。下载完成后需按 RST 键退出",
+    "Strapping 引脚 —— GPIO46：决定内部 VDD_SPI（Flash 供电）电压。低电平=3.3V（默认），高电平=1.8V。勿随意更改，否则 Flash/PSRAM 可能不工作",
+    "ADC2 不可与 WiFi 同时使用 —— ESP32-S3 有两个 ADC（ADC1 和 ADC2），但 ADC2 的采样电路与 WiFi 射频模块共享内部资源。一旦开启 WiFi，ADC2 的所有通道均不可用。始终使用 ADC1 的引脚（GPIO1-GPIO9）",
+    "GPIO35/36/37 为仅输入引脚 —— 无内部上拉/下拉电阻，无输出驱动能力。如需使用需外接上拉/下拉电阻。这三个引脚通常用于 Strapping 或 JTAG 信号",
+    "PSRAM 需在 menuconfig 中启用 —— 默认固件可能未启用 PSRAM。在 menuconfig → Component config → ESP PSRAM 中开启。启用后 heap_caps_malloc(..., MALLOC_CAP_SPIRAM) 才可用",
+    "深度睡眠唤醒后程序重新启动 —— 不同于 STM32 的 Standby 唤醒后继续执行，ESP32 的深度睡眠唤醒会复位整个 SoC，程序从 app_main() 重新开始。如需保存状态，应使用 RTC Memory（RTC_DATA_ATTR）",
+    "USB Serial/JTAG 在深度睡眠时会断开 —— 唤醒后需等待 USB 重新枚举。开发调试时如频繁深睡会打断串口监控，建议调试阶段禁用自动睡眠"
+  ],
+
+  "safety_notes": [
+    "ESP32-S3 工作电压为 3.0V-3.6V，所有 GPIO 均为 3.3V 电平。绝对不要直接连接 5V 信号到任何 GPIO，否则会永久损坏芯片",
+    "如需要 5V 电平，务必在中间加电平转换器（如 TXS0108E 或分压电阻）。部分开发板上的 GPIO 标称'5V tolerant'的说法不可轻信",
+    "板载 LDO 的输出能力有限（通常 500-800 mA）。如挂载较多外部模块（WiFi 峰值约 500 mA + 传感器 × N），请评估总功耗并使用外部供电",
+    "天线区域勿覆盖金属或大面积铺铜。WiFi/BLE 的 PCB 天线区域为板边特定位置（参考 ESP32-S3-DevKitC-1 丝印的 Keep-out 区域）",
+    "工作温度范围：-40°C 至 +85°C（模组级别）。但板载 LDO 在高温大电流下可能过热保护，实际可用温度范围以 LDO 数据手册为准"
+  ],
+
+  "programming_interfaces": [
+    "USB Serial/JTAG (GPIO19/20, 板载 USB-C 直接连接)",
+    "UART0 (GPIO43/44, 需外接 USB-UART 转换器, 通过 esptool.py 烧录)",
+    "JTAG (通过 USB Serial/JTAG 内置调试器，OpenOCD 可直接连接)"
+  ],
+
+  "metadata": {
+    "author": "司南嵌入式智能体团队",
+    "created": "2026-05-29",
+    "datasheet_url": "https://www.espressif.com/sites/default/files/documentation/esp32-s3_datasheet_en.pdf",
+    "schematic_url": "https://dl.espressif.com/dl/schematics/ESP32-S3-DevKitC-1_V1.1_Schematics.pdf"
+  }
+}

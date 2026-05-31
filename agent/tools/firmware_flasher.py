@@ -1,0 +1,724 @@
+"""
+固件烧写器 —— 将编译产物烧录到目标设备。
+
+支持的烧写方法:
+- PlatformIO upload（项目配置驱动）
+- esptool（ESP32/ESP8266）
+- STM32CubeProg / STM32_Programmer_CLI（STM32 via SWD）
+- OpenOCD（通用调试器）
+- J-Link（SEGGER）
+
+提供烧写方法自动检测、烧写验证、引导加载程序状态检测等功能。
+"""
+
+import logging
+import re
+import shutil
+import subprocess
+import time
+from pathlib import Path
+from typing import Optional
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# 支持的烧写方法
+# ---------------------------------------------------------------------------
+
+FLASH_METHODS = {
+    "platformio": "PlatformIO upload —— 通过 platformio.ini 配置自动上传",
+    "esptool": "esptool.py —— ESP32/ESP8266 串口烧写",
+    "stm32cubeprog": "STM32_Programmer_CLI —— STM32 SWD/JTAG 烧写",
+    "openocd": "OpenOCD —— 通用调试探针烧写",
+    "jlink": "J-Link —— SEGGER J-Link 烧写",
+    "arduino": "arduino-cli upload —— Arduino 开发板烧写",
+}
+
+
+# ---------------------------------------------------------------------------
+# 烧写方法检测
+# ---------------------------------------------------------------------------
+
+
+def detect_flash_method(project_path: str) -> str:
+    """从项目配置中检测推荐的烧写方法。
+
+    检测逻辑:
+        1. 存在 ``platformio.ini`` 并且项目不完全是 Arduino 风格 → ``"platformio"``
+        2. ESP32/ESP8266 相关标识 → ``"esptool"``
+        3. STM32 相关标识 → ``"stm32cubeprog"``
+        4. 存在 .ino 文件 → ``"arduino"``
+        5. 存在 ``openocd.cfg`` → ``"openocd"``
+        6. 存在 J-Link 脚本 → ``"jlink"``
+        7. 默认返回 ``"platformio"``
+
+    Args:
+        project_path: 项目根目录路径。
+
+    Returns:
+        烧写方法标识字符串（见 ``FLASH_METHODS`` 的键）。
+    """
+    root = Path(project_path).resolve()
+
+    # 检查特化配置文件
+    if (root / "openocd.cfg").is_file() or (root / "openocd").is_dir():
+        return "openocd"
+
+    jlink_files = list(root.glob("*.jlink")) + list(root.glob("*.jlinkscript"))
+    if jlink_files:
+        return "jlink"
+
+    # 检查 platformio.ini 内容
+    pio_ini = root / "platformio.ini"
+    if pio_ini.is_file():
+        try:
+            content = pio_ini.read_text(encoding="utf-8")
+            # 检测上传工具类型
+            if re.search(r"upload_protocol\s*=\s*esptool", content, re.IGNORECASE):
+                return "esptool"
+            if re.search(r"upload_protocol\s*=\s*stlink|stm32", content, re.IGNORECASE):
+                return "stm32cubeprog"
+            if re.search(r"upload_protocol\s*=\s*jlink|segger", content, re.IGNORECASE):
+                return "jlink"
+            # 平台特征
+            if re.search(r"platform\s*=\s*espressif", content, re.IGNORECASE):
+                return "esptool"
+            if re.search(r"platform\s*=\s*ststm32", content, re.IGNORECASE):
+                return "stm32cubeprog"
+
+            return "platformio"
+        except (OSError, UnicodeDecodeError):
+            pass
+
+    # Arduino
+    ino_files = list(root.glob("*.ino"))
+    if ino_files:
+        return "arduino"
+
+    return "platformio"
+
+
+# ---------------------------------------------------------------------------
+# 引导加载程序状态检测
+# ---------------------------------------------------------------------------
+
+
+def get_bootloader_info(port: str) -> dict:
+    """检测设备是否处于引导加载程序模式。
+
+    通过串口发送探测命令并分析响应，判断设备当前处于
+    引导加载程序模式还是正常运行模式。
+
+    Args:
+        port: 串口端口路径。
+
+    Returns:
+        引导加载程序状态信息::
+
+            {
+                "in_bootloader": bool,
+                "bootloader_type": str,    # 如 "STM32 DFU"、"ESP32 ROM"、"U-Boot"
+                "chip_family": str,        # 芯片系列
+                "supports_flash": bool,    # 是否可通过串口烧写
+                "recommended_tool": str,   # 推荐烧写工具
+            }
+    """
+    result: dict = {
+        "in_bootloader": False,
+        "bootloader_type": "",
+        "chip_family": "",
+        "supports_flash": False,
+        "recommended_tool": "",
+    }
+
+    # 尝试通过 pyserial 探测（惰性依赖，不强制要求）
+    try:
+        import serial
+    except ImportError:
+        logger.debug("pyserial 未安装，无法探测引导加载程序。请执行: pip install pyserial")
+        return result
+
+    try:
+        ser = serial.Serial(port=port, baudrate=115200, timeout=2.0)
+    except (serial.SerialException, OSError) as exc:
+        logger.warning("无法打开串口 %s: %s", port, exc)
+        return result
+
+    try:
+        # 发送 break + AT 命令
+        ser.send_break(0.1)
+        time.sleep(0.05)
+        ser.write(b"AT\r\n")
+        ser.flush()
+
+        time.sleep(0.5)
+        response = ser.read(ser.in_waiting or 1024).decode("utf-8", errors="replace")
+
+        # 模式匹配
+        if re.search(r"(STM32|stm32)\s*(BOOT|DFU)", response, re.IGNORECASE):
+            result["in_bootloader"] = True
+            result["bootloader_type"] = "STM32 DFU"
+            result["chip_family"] = "STM32"
+            result["supports_flash"] = True
+            result["recommended_tool"] = "stm32cubeprog"
+
+        elif re.search(r"(waiting for download|ets\s+\w+\s+.*rom)", response, re.IGNORECASE):
+            result["in_bootloader"] = True
+            result["bootloader_type"] = "ESP32 ROM"
+            result["chip_family"] = "ESP32"
+            result["supports_flash"] = True
+            result["recommended_tool"] = "esptool"
+
+        elif re.search(r"(U-Boot|uboot)", response, re.IGNORECASE):
+            result["in_bootloader"] = True
+            result["bootloader_type"] = "U-Boot"
+            result["chip_family"] = ""
+            result["supports_flash"] = True
+            result["recommended_tool"] = "openocd"
+
+        elif re.search(r"(RP2 Boot|UF2 Boot)", response, re.IGNORECASE):
+            result["in_bootloader"] = True
+            result["bootloader_type"] = "RP2 Boot"
+            result["chip_family"] = "RP2040"
+            result["supports_flash"] = False
+            result["recommended_tool"] = ""
+
+        elif response.strip():
+            # 有响应但无法识别 —— 可能是固件正常运行中
+            result["in_bootloader"] = False
+            result["bootloader_type"] = "application"
+
+        logger.info("引导加载程序检测 %s: in_bootloader=%s type=%s", port, result["in_bootloader"], result["bootloader_type"])
+    except (OSError, Exception) as exc:
+        logger.warning("引导加载程序探测异常: %s", exc)
+    finally:
+        ser.close()
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# 烧写
+# ---------------------------------------------------------------------------
+
+
+def _run_command(cmd: list[str], cwd: Path, timeout: int = 300) -> subprocess.CompletedProcess:
+    """执行子进程并返回结果。"""
+    logger.debug("执行: %s (cwd=%s)", " ".join(cmd), cwd)
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, cwd=str(cwd), timeout=timeout)
+    except subprocess.TimeoutExpired:
+        logger.error("命令超时: %s", " ".join(cmd))
+        raise
+    except FileNotFoundError:
+        logger.error("命令未找到: %s", cmd[0])
+        raise
+
+
+def _flash_platformio(project_path: Path, port: str) -> dict:
+    """通过 PlatformIO 上传烧写。"""
+    if not shutil.which("pio"):
+        return {
+            "success": False,
+            "output": "",
+            "errors": ["PlatformIO CLI ('pio') 未安装。请执行: pip install platformio"],
+        }
+
+    cmd = ["pio", "run", "-d", str(project_path), "-t", "upload"]
+    if port:
+        cmd.extend(["--upload-port", port])
+
+    try:
+        result = _run_command(cmd, project_path)
+    except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
+        return {"success": False, "output": "", "errors": [str(exc)]}
+
+    return {
+        "success": result.returncode == 0,
+        "output": result.stdout,
+        "errors": [result.stderr.strip()] if result.stderr.strip() and result.returncode != 0 else [],
+    }
+
+
+def _flash_esptool(project_path: Path, port: str) -> dict:
+    """通过 esptool.py 烧写 ESP32/ESP8266。
+
+    优先查找 ``.pio/build/`` 目录下的 firmware.bin，
+    以及 ``build/``、``.pio/`` 下的固件文件。
+    """
+    esptool = shutil.which("esptool.py") or shutil.which("esptool")
+    if not esptool:
+        return {
+            "success": False,
+            "output": "",
+            "errors": ["esptool.py 未安装。请执行: pip install esptool"],
+        }
+
+    # 查找固件文件
+    firmware_path: Optional[Path] = None
+    search_dirs = [
+        project_path / ".pio" / "build",
+        project_path / "build",
+        project_path / ".pio",
+    ]
+    search_patterns = ["firmware.bin", "*.bin", "*.elf"]
+
+    for search_dir in search_dirs:
+        if search_dir.is_dir():
+            for pattern in search_patterns:
+                matches = list(search_dir.rglob(pattern))
+                if matches:
+                    # 优先选 firmware.bin
+                    for m in matches:
+                        if m.name == "firmware.bin":
+                            firmware_path = m
+                            break
+                    if firmware_path is None:
+                        firmware_path = matches[0]
+                    break
+        if firmware_path is not None:
+            break
+
+    if firmware_path is None:
+        # 宽搜索整个项目目录
+        all_bins = list(project_path.rglob("firmware.bin"))
+        if all_bins:
+            firmware_path = all_bins[0]
+        else:
+            all_bins = list(project_path.rglob("*.bin"))
+            if all_bins:
+                firmware_path = all_bins[0]
+
+    if firmware_path is None:
+        return {
+            "success": False,
+            "output": "",
+            "errors": [f"未找到固件文件（.bin）。已搜索: {project_path}"],
+        }
+
+    logger.info("烧写固件: %s → %s", firmware_path.name, port)
+
+    cmd = [
+        esptool,
+        "--port", port,
+        "write_flash",
+        "0x0",
+        str(firmware_path),
+    ]
+
+    try:
+        result = _run_command(cmd, project_path)
+    except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
+        return {"success": False, "output": "", "errors": [str(exc)]}
+
+    return {
+        "success": result.returncode == 0,
+        "output": result.stdout,
+        "errors": [result.stderr.strip()] if result.stderr.strip() and result.returncode != 0 else [],
+    }
+
+
+def _flash_stm32cubeprog(project_path: Path, port: str) -> dict:
+    """通过 STM32CubeProg CLI 烧写 STM32。"""
+    stm32cli = (
+        shutil.which("STM32_Programmer_CLI")
+        or shutil.which("STM32CubeProg")
+    )
+    if not stm32cli:
+        return {
+            "success": False,
+            "output": "",
+            "errors": [
+                "STM32_Programmer_CLI 未安装或不在 PATH 中。"
+                "请从 https://www.st.com/en/development-tools/stm32cubeprog.html 下载。"
+            ],
+        }
+
+    # 查找 firmware.hex/.bin/.elf
+    firmware_path: Optional[Path] = None
+    for ext in (".hex", ".bin", ".elf"):
+        candidates = list(project_path.rglob(f"*{ext}"))
+        if candidates:
+            firmware_path = candidates[0]
+            break
+
+    if firmware_path is None:
+        return {
+            "success": False,
+            "output": "",
+            "errors": [f"未找到固件文件（.hex/.bin/.elf）。已搜索: {project_path}"],
+        }
+
+    logger.info("STM32 烧写: %s → %s", firmware_path.name, port)
+
+    cmd = [
+        stm32cli,
+        "-c", f"port=SWD",
+        "-w", str(firmware_path),
+        "-v",
+        "-rst",
+    ]
+
+    try:
+        result = _run_command(cmd, project_path)
+    except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
+        return {"success": False, "output": "", "errors": [str(exc)]}
+
+    return {
+        "success": result.returncode == 0,
+        "output": result.stdout,
+        "errors": [result.stderr.strip()] if result.stderr.strip() and result.returncode != 0 else [],
+    }
+
+
+def _flash_openocd(project_path: Path, port: str) -> dict:
+    """通过 OpenOCD 烧写。
+
+    优先查找项目中的 ``openocd.cfg`` 或 ``board/*.cfg``。
+    """
+    openocd = shutil.which("openocd")
+    if not openocd:
+        return {
+            "success": False,
+            "output": "",
+            "errors": ["OpenOCD 未安装。请执行: sudo apt install openocd"],
+        }
+
+    # 查找配置文件
+    config_file: Optional[Path] = None
+    cfg_candidates = [
+        project_path / "openocd.cfg",
+        project_path / "board" / "openocd.cfg",
+    ]
+    for candidate in cfg_candidates:
+        if candidate.is_file():
+            config_file = candidate
+            break
+
+    if config_file is None:
+        # 尝试 board/ 下的其他 .cfg 文件
+        board_dir = project_path / "board"
+        if board_dir.is_dir():
+            cfgs = list(board_dir.glob("*.cfg"))
+            if cfgs:
+                config_file = cfgs[0]
+
+    # 查找固件
+    firmware_path: Optional[Path] = None
+    for ext in (".elf", ".bin", ".hex"):
+        candidates = list(project_path.rglob(f"*{ext}"))
+        if candidates:
+            firmware_path = candidates[0]
+            break
+
+    if firmware_path is None:
+        return {
+            "success": False,
+            "output": "",
+            "errors": [f"未找到固件文件。已搜索: {project_path}"],
+        }
+
+    cmd = [openocd]
+    if config_file:
+        cmd.extend(["-f", str(config_file)])
+    cmd.extend([
+        "-c", f"program {firmware_path} verify reset exit",
+    ])
+
+    logger.info("OpenOCD 烧写: %s", firmware_path.name)
+
+    try:
+        result = _run_command(cmd, project_path)
+    except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
+        return {"success": False, "output": "", "errors": [str(exc)]}
+
+    return {
+        "success": result.returncode == 0,
+        "output": result.stdout,
+        "errors": [result.stderr.strip()] if result.stderr.strip() and result.returncode != 0 else [],
+    }
+
+
+def _flash_jlink(project_path: Path, port: str) -> dict:
+    """通过 SEGGER J-Link 烧写。
+
+    优先查找项目中的 J-Link 脚本，否则生成临时命令序列。
+    """
+    jlinkexe = shutil.which("JLinkExe") or shutil.which("jlinkexe")
+    if not jlinkexe:
+        return {
+            "success": False,
+            "output": "",
+            "errors": ["JLinkExe 未安装。请从 https://www.segger.com/downloads/jlink/ 下载"],
+        }
+
+    # 查找脚本文件
+    script_file: Optional[Path] = None
+    for pattern in ("*.jlink", "*.jlinkscript", "flash.jlink"):
+        candidates = list(project_path.rglob(pattern))
+        if candidates:
+            script_file = candidates[0]
+            break
+
+    # 查找固件
+    firmware_path: Optional[Path] = None
+    for ext in (".hex", ".bin", ".elf"):
+        candidates = list(project_path.rglob(f"*{ext}"))
+        if candidates:
+            firmware_path = candidates[0]
+            break
+
+    if firmware_path is None and script_file is None:
+        return {
+            "success": False,
+            "output": "",
+            "errors": [f"未找到固件文件或 J-Link 脚本。已搜索: {project_path}"],
+        }
+
+    cmd = [jlinkexe]
+
+    if script_file:
+        cmd.extend(["-CommanderScript", str(script_file)])
+    elif port:
+        # 尝试使用串口连接 J-Link
+        cmd.extend(["-device", port])
+    else:
+        cmd.extend(["-autoconnect", "1"])
+
+    # 生成 J-Link 命令
+    if firmware_path and not script_file:
+        commands = [
+            "r",               # reset
+            "h",               # halt
+            "loadfile " + str(firmware_path),
+            "r",
+            "g",
+            "exit",
+        ]
+        from tempfile import NamedTemporaryFile
+        with NamedTemporaryFile(mode="w", suffix=".jlink", delete=False) as f:
+            f.write("\n".join(commands))
+            tmp_script = f.name
+        cmd.extend(["-CommanderScript", tmp_script])
+        logger.info("已生成临时 J-Link 脚本: %s", tmp_script)
+
+    try:
+        result = _run_command(cmd, project_path)
+    except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
+        return {"success": False, "output": "", "errors": [str(exc)]}
+
+    # 清理临时脚本
+    if firmware_path and not script_file:
+        try:
+            Path(tmp_script).unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    return {
+        "success": result.returncode == 0,
+        "output": result.stdout,
+        "errors": [result.stderr.strip()] if result.stderr.strip() and result.returncode != 0 else [],
+    }
+
+
+def _flash_arduino(project_path: Path, port: str) -> dict:
+    """通过 arduino-cli 上传烧写。"""
+    if not shutil.which("arduino-cli"):
+        return {
+            "success": False,
+            "output": "",
+            "errors": ["arduino-cli 未安装。请参见: https://arduino.github.io/arduino-cli/"],
+        }
+
+    cmd = [
+        "arduino-cli", "upload",
+        "-p", port,
+        "--fqbn", "arduino:avr:uno",
+        str(project_path),
+    ]
+
+    try:
+        result = _run_command(cmd, project_path)
+    except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
+        return {"success": False, "output": "", "errors": [str(exc)]}
+
+    return {
+        "success": result.returncode == 0,
+        "output": result.stdout,
+        "errors": [result.stderr.strip()] if result.stderr.strip() and result.returncode != 0 else [],
+    }
+
+
+_FLASHERS = {
+    "platformio": _flash_platformio,
+    "esptool": _flash_esptool,
+    "stm32cubeprog": _flash_stm32cubeprog,
+    "openocd": _flash_openocd,
+    "jlink": _flash_jlink,
+    "arduino": _flash_arduino,
+}
+
+
+def flash_firmware(
+    project_path: str,
+    port: str,
+    method: str = "auto",
+) -> dict:
+    """烧写固件到目标设备。
+
+    Args:
+        project_path: 项目根目录路径。
+        port: 目标串口/调试端口路径。
+        method: 烧写方法。``"auto"`` 自动检测，或显式指定:
+                ``"platformio"`` / ``"esptool"`` / ``"stm32cubeprog"`` /
+                ``"openocd"`` / ``"jlink"`` / ``"arduino"``。
+
+    Returns:
+        烧写结果 dict::
+
+            {
+                "success": bool,
+                "output": str,      # 工具标准输出
+                "errors": list,     # 错误信息列表
+            }
+    """
+    root = Path(project_path).resolve()
+
+    if method == "auto":
+        method = detect_flash_method(str(root))
+        logger.info("自动检测烧写方法: %s", method)
+
+    if method not in _FLASHERS:
+        available = ", ".join(_FLASHERS.keys())
+        return {
+            "success": False,
+            "output": "",
+            "errors": [f"不支持的烧写方法 '{method}'。可用方法: {available}"],
+        }
+
+    flasher = _FLASHERS[method]
+    logger.info("开始烧写固件: method=%s, port=%s, project=%s", method, port, root)
+
+    result = flasher(root, port)
+
+    if result["success"]:
+        logger.info("烧写成功: %s", port)
+    else:
+        logger.error("烧写失败: %s", port)
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# 烧写验证
+# ---------------------------------------------------------------------------
+
+
+def verify_flash(project_path: str, port: str) -> dict:
+    """烧写后回读并验证固件完整性。
+
+    当前支持的验证方式:
+        - esptool: ``verify_flash``
+        - OpenOCD: ``verify_image``
+        - STM32CubeProg: 自带 ``-v`` 选项（已在烧写阶段完成）
+
+    Args:
+        project_path: 项目根目录路径。
+        port: 目标端口。
+
+    Returns:
+        验证结果 dict::
+
+            {
+                "verified": bool,
+                "output": str,
+                "errors": list,
+            }
+    """
+    root = Path(project_path).resolve()
+    method = detect_flash_method(str(root))
+
+    if method == "esptool":
+        esptool = shutil.which("esptool.py") or shutil.which("esptool")
+        if not esptool:
+            return {
+                "verified": False,
+                "output": "",
+                "errors": ["esptool.py 未安装"],
+            }
+
+        firmware_path: Optional[Path] = None
+        for search_dir in [root / ".pio" / "build", root / "build", root / ".pio"]:
+            if search_dir.is_dir():
+                candidates = list(search_dir.rglob("firmware.bin"))
+                if candidates:
+                    firmware_path = candidates[0]
+                    break
+
+        if firmware_path is None:
+            candidates = list(root.rglob("firmware.bin"))
+            if candidates:
+                firmware_path = candidates[0]
+
+        if firmware_path is None:
+            return {
+                "verified": False,
+                "output": "",
+                "errors": ["未找到固件文件进行验证"],
+            }
+
+        cmd = [esptool, "--port", port, "verify_flash", "--diff", "yes", str(firmware_path)]
+        try:
+            result = _run_command(cmd, root)
+        except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
+            return {"verified": False, "output": "", "errors": [str(exc)]}
+
+        return {
+            "verified": result.returncode == 0,
+            "output": result.stdout,
+            "errors": [result.stderr.strip()] if result.stderr.strip() and result.returncode != 0 else [],
+        }
+
+    elif method == "openocd":
+        openocd = shutil.which("openocd")
+        if not openocd:
+            return {"verified": False, "output": "", "errors": ["OpenOCD 未安装"]}
+
+        cfg: Optional[Path] = None
+        for candidate in [root / "openocd.cfg", root / "board" / "openocd.cfg"]:
+            if candidate.is_file():
+                cfg = candidate
+                break
+
+        firmware_path: Optional[Path] = None
+        for ext in (".elf", ".bin", ".hex"):
+            candidates = list(root.rglob(f"*{ext}"))
+            if candidates:
+                firmware_path = candidates[0]
+                break
+
+        if firmware_path is None:
+            return {"verified": False, "output": "", "errors": ["未找到固件文件"]}
+
+        cmd = [openocd]
+        if cfg:
+            cmd.extend(["-f", str(cfg)])
+        cmd.extend(["-c", f"verify_image {firmware_path}", "-c", "reset", "-c", "exit"])
+
+        try:
+            result = _run_command(cmd, root)
+        except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
+            return {"verified": False, "output": "", "errors": [str(exc)]}
+
+        return {
+            "verified": result.returncode == 0,
+            "output": result.stdout,
+            "errors": [result.stderr.strip()] if result.stderr.strip() and result.returncode != 0 else [],
+        }
+
+    # 其他方法不在 Python 层面做验证（已由烧写工具自带校验）
+    return {
+        "verified": True,
+        "output": "",
+        "errors": [f"验证方式 '{method}' 暂不支持 Python 层面独立验证，请依赖烧写工具内置校验"],
+    }

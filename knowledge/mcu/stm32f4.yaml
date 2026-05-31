@@ -1,0 +1,35 @@
+name: STM32F407VET6
+manufacturer: STMicroelectronics
+arch: ARM Cortex-M4
+max_clock: 168MHz
+flash: 512KB
+ram: 192KB
+voltage: 1.8V-3.6V
+package: LQFP100
+key_features:
+  - FPU (single precision)
+  - DSP instructions
+  - 12x 16-bit timers, 2x 32-bit timers
+  - 3x I2C, 3x SPI, 4x USART, 2x UART
+  - 2x CAN 2.0B
+  - USB OTG FS
+  - 3x 12-bit ADC (24 channels)
+  - 2x 12-bit DAC
+clock_tree:
+  HSI: 16MHz (internal RC)
+  HSE: 4-26MHz (external crystal)
+  PLL: up to 168MHz
+  APB1: max 42MHz
+  APB2: max 84MHz
+common_pitfalls:
+  - "BOOT0 引脚决定启动模式：低电平从 Flash 启动，高电平从系统存储器启动"
+  - "PA13/PA14/PA15 默认是 SWD 调试口，重映射为 GPIO 需谨慎"
+  - "I2C 的 SCL/SDA 需要外接 4.7kΩ 上拉电阻到 3.3V"
+  - "ADC 参考电压 VREF+ 默认接 VDDA，如需精确测量应外接基准源"
+  - "PB3/PB4 默认是 JTAG 口（JTDO/JNTRST），用作 GPIO 需要先释放调试口"
+  - "USB OTG FS 需要外接 48MHz 晶振或使用 PLL 从 HSE 倍频"
+programming_interfaces:
+  - SWD (Serial Wire Debug)
+  - JTAG
+  - USART1 bootloader (system memory)
+  - USB DFU

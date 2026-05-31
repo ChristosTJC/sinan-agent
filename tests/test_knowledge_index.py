@@ -48,3 +48,39 @@ def test_search_documents():
         results = index.search("STM32F405", limit=10)
         assert len(results) == 1
         assert "STM32F405" in results[0]["title"]
+
+def test_update_document():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        index = KnowledgeIndex(index_dir=tmpdir)
+
+        doc_id = index.add_document(
+            title="旧标题",
+            content="旧内容",
+            doc_type=DocumentType.GENERAL
+        )
+
+        index.update_document(
+            doc_id=doc_id,
+            title="新标题",
+            content="新内容"
+        )
+
+        results = index.search("新标题")
+        assert len(results) == 1
+        assert results[0]["title"] == "新标题"
+
+def test_delete_document():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        index = KnowledgeIndex(index_dir=tmpdir)
+
+        doc_id = index.add_document(
+            title="测试文档",
+            content="测试内容",
+            doc_type=DocumentType.GENERAL
+        )
+
+        assert index.get_document_count() == 1
+
+        index.delete_document(doc_id)
+
+        assert index.get_document_count() == 0

@@ -110,4 +110,88 @@ class KnowledgeIndex:
 
     def get_document_count(self) -> int:
         with self.ix.searcher() as searcher:
-            return searcher.doc_count_all()
+            # 使用 doc_count() 而不是 doc_count_all()，排除已删除的文档
+            return searcher.doc_count()
+
+    def update_document(
+        self,
+        doc_id: str,
+        title: Optional[str] = None,
+        content: Optional[str] = None,
+        doc_type: Optional[DocumentType] = None,
+        tags: Optional[List[str]] = None,
+        filepath: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> None:
+        # 先获取现有文档
+        with self.ix.searcher() as searcher:
+            query = QueryParser("doc_id", self.ix.schema).parse(doc_id)
+            results = list(searcher.search(query, limit=1))
+
+            if not results:
+                raise ValueError(f"文档不存在: {doc_id}")
+
+            old_doc = results[0]
+            # 在 searcher 关闭前提取所有需要的字段
+            old_title = old_doc["title"]
+            old_content = old_doc["content"]
+            old_doc_type = old_doc["doc_type"]
+            old_tags = old_doc.get("tags", "")
+            old_filepath = old_doc.get("filepath", "")
+
+        # 删除旧文档
+        self.delete_document(doc_id)
+
+        # 添加新文档（保留未更新的字段）
+        self.add_document(
+            doc_id=doc_id,
+            title=title or old_title,
+            content=content or old_content,
+            doc_type=doc_type or DocumentType(old_doc_type),
+            tags=tags or (old_tags.split(",") if old_tags else []),
+            filepath=filepath or old_filepath,
+            metadata=metadata
+        )
+
+    def delete_document(self, doc_id: str) -> None:
+        writer = self.ix.writer()
+        writer.delete_by_term("doc_id", doc_id)
+        writer.commit()
+
+    def rebuild_index(self, knowledge_dir: Path) -> int:
+        # 清空现有索引
+        writer = self.ix.writer()
+        writer.commit(mergetype=index.CLEAR)
+
+        # 重新扫描知识库目录
+        count = 0
+        for md_file in knowledge_dir.rglob("*.md"):
+            with open(md_file, "r", encoding="utf-8") as f:
+                content = f.read()
+
+            # 从文件路径推断文档类型
+            doc_type = self._infer_doc_type(md_file)
+
+            self.add_document(
+                title=md_file.stem,
+                content=content,
+                doc_type=doc_type,
+                filepath=str(md_file)
+            )
+            count += 1
+
+        return count
+
+    def _infer_doc_type(self, filepath: Path) -> DocumentType:
+        parts = filepath.parts
+        if "mcu" in parts or "芯片" in parts:
+            return DocumentType.MCU
+        if "protocol" in parts or "协议" in parts:
+            return DocumentType.PROTOCOL
+        if "sensor" in parts or "传感器" in parts:
+            return DocumentType.SENSOR
+        if "error" in parts or "错误码" in parts:
+            return DocumentType.ERROR_CODE
+        if "board" in parts or "板卡" in parts:
+            return DocumentType.BOARD
+        return DocumentType.GENERAL

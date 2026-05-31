@@ -95,3 +95,87 @@ def test_context_manager_clear():
     ctx.clear()
 
     assert len(ctx.get_messages()) == 0
+
+
+# ============================================================
+# MessageCompactor 测试
+# ============================================================
+
+from agent.context.compactor import MessageCompactor
+
+
+def test_message_compactor_generic():
+    """测试通用压缩策略（头尾保留）"""
+    compactor = MessageCompactor()
+
+    long_text = "\n".join([f"行 {i}" for i in range(100)])
+    compressed = compactor.compress_generic(long_text, max_lines=20)
+
+    lines = compressed.split("\n")
+
+    # 保留前 10 行 + 分隔符 + 后 10 行
+    assert len(lines) <= 22  # 10 + 1 (分隔符) + 10 + 1 (截断信息)
+    assert "行 0" in compressed
+    assert "行 99" in compressed
+    assert "已截断" in compressed
+
+
+def test_message_compactor_sensor_data():
+    """测试传感器数据压缩"""
+    compactor = MessageCompactor()
+
+    sensor_log = """
+[INFO] 传感器初始化完成
+[DATA] 温度: 25.3°C
+[DATA] 湿度: 60%
+[DATA] 温度: 25.4°C
+[DATA] 湿度: 61%
+[DATA] 温度: 25.5°C
+[ERROR] 传感器异常
+[DATA] 温度: 25.6°C
+"""
+
+    compressed = compactor.compress_sensor_data(sensor_log, max_lines=10)
+
+    # 应该保留 ERROR 和部分 DATA
+    assert "[ERROR]" in compressed
+    assert "[INFO]" in compressed
+    assert "已截断" in compressed or len(compressed.split("\n")) <= 12
+
+
+def test_message_compactor_build_log():
+    """测试编译日志压缩（保留错误和警告）"""
+    compactor = MessageCompactor()
+
+    build_log = """
+[ 10%] Building CXX object CMakeFiles/armor_detector.dir/src/detector.cpp.o
+[ 20%] Building CXX object CMakeFiles/armor_detector.dir/src/tracker.cpp.o
+/home/user/src/tracker.cpp:42:10: warning: unused variable 'temp' [-Wunused-variable]
+[ 30%] Building CXX object CMakeFiles/armor_detector.dir/src/solver.cpp.o
+/home/user/src/solver.cpp:100:5: error: 'Eigen::Matrix3d' has no member named 'inversee'
+[ 40%] Building CXX object CMakeFiles/armor_detector.dir/src/main.cpp.o
+[ 50%] Linking CXX executable armor_detector
+"""
+
+    compressed = compactor.compress_build_log(build_log, max_lines=10)
+
+    # 必须保留 error 和 warning
+    assert "error:" in compressed
+    assert "warning:" in compressed
+    assert "已截断" in compressed or "Building" in compressed
+
+
+def test_message_compactor_file_content():
+    """测试文件内容压缩"""
+    compactor = MessageCompactor()
+
+    file_content = "\n".join([f"// 第 {i} 行代码" for i in range(200)])
+    compressed = compactor.compress_file_content(file_content, max_lines=50)
+
+    lines = compressed.split("\n")
+
+    # 保留前 25 行 + 分隔符 + 后 25 行
+    assert len(lines) <= 52
+    assert "第 0 行" in compressed
+    assert "第 199 行" in compressed
+    assert "已截断" in compressed

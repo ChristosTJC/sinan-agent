@@ -1,0 +1,33 @@
+platforms:
+  stm32:
+    enabled: true
+    default_build_system: make
+    default_flash_tool: openocd
+
+  nordic:
+    enabled: true
+    default_build_system: cmake
+    default_flash_tool: pyocd
+    sdk_path: null
+
+build_systems:
+  make:
+    enabled: true
+    parallel_jobs: 4
+
+  cmake:
+    enabled: true
+    parallel_jobs: 4
+    generator: "Unix Makefiles"
+
+flash_tools:
+  openocd:
+    enabled: true
+    interface: "stlink"
+
+  pyocd:
+    enabled: true
+    frequency: 1000000
+
+  nrfjprog:
+    enabled: false

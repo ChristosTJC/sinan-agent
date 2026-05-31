@@ -52,7 +52,9 @@ from agent.repl.theme import (
     BRAND_PRIMARY, BRAND_ACCENT, DIM, RESET, FG_GRAY,
 )
 from agent.tasks import TaskManager, TaskExecutor, TaskScheduler, TaskType
-from agent.context import ContextManager, MessageCompactor
+from agent.context import ContextManager, MessageCompactor, ThinkingChain
+from agent.repl.thinking_renderer import ThinkingRenderer
+from agent.repl.widgets import TaskCard, TaskStatus
 
 logger = logging.getLogger(__name__)
 
@@ -147,6 +149,10 @@ class SinanREPL:
         # 上下文管理
         self.context_manager = ContextManager(max_tokens=100000, window_size=20)
         self.message_compactor = MessageCompactor()
+
+        # 思维链系统
+        self.thinking_chain: Optional[ThinkingChain] = None
+        self.thinking_renderer = ThinkingRenderer()
 
         # 工具（必须在构建系统提示之前初始化，因为 _build_runtime_context 需要读取工具列表）
         self._init_tools()
@@ -790,7 +796,16 @@ class SinanREPL:
 
             # 状态回调
             def _status(name: str, status: str) -> None:
-                print_tool_status(self.console, name, status)
+                # 使用 TaskCard 显示工具状态
+                if status == "running":
+                    card = TaskCard(
+                        name=name,
+                        status=TaskStatus.RUNNING,
+                        description=f"执行 {name}..."
+                    )
+                    print(card.render())
+                else:
+                    print_tool_status(self.console, name, status)
 
             # 审批回调：危险工具需要用户确认
             def _approval(name: str, args: dict) -> bool:
@@ -965,6 +980,10 @@ class SinanREPL:
             # 用户消息加入历史
             self.messages.append({"role": "user", "content": user_input})
             self._persist_message("user", user_input)
+
+            # 启动思维会话
+            session_id = f"session-{datetime.now().timestamp()}"
+            self.thinking_chain = ThinkingChain(session_id=session_id)
 
             # 消息间分隔 + 助手标签（仅在有实质内容时渲染）
             print_divider(self.console)

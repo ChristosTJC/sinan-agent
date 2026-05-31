@@ -84,3 +84,24 @@ def test_delete_document():
         index.delete_document(doc_id)
 
         assert index.get_document_count() == 0
+
+def test_search_performance():
+    import time
+    with tempfile.TemporaryDirectory() as tmpdir:
+        index = KnowledgeIndex(index_dir=tmpdir)
+
+        # 添加 100 个文档
+        for i in range(100):
+            index.add_document(
+                title=f"Document {i}",
+                content=f"This is test document number {i} with some content",
+                doc_type=DocumentType.GENERAL
+            )
+
+        # 测试搜索速度
+        start = time.time()
+        results = index.search("document", limit=10)
+        elapsed = time.time() - start
+
+        assert len(results) > 0
+        assert elapsed < 0.1  # 搜索应在 100ms 内完成

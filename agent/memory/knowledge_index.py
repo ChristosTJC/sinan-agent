@@ -3,12 +3,14 @@ from __future__ import annotations
 from pathlib import Path
 from enum import Enum
 from typing import Optional, List, Dict, Any
+import uuid
 
 try:
     from whoosh import index
     from whoosh.fields import Schema, TEXT, ID, KEYWORD, STORED
     from whoosh.qparser import MultifieldParser, QueryParser
     from whoosh.analysis import StemmingAnalyzer
+    from whoosh.writing import AsyncWriter
     HAS_WHOOSH = True
 except ImportError:
     HAS_WHOOSH = False
@@ -51,3 +53,61 @@ class KnowledgeIndex:
     def _create_index(self) -> None:
         schema = self.get_schema()
         index.create_in(str(self.index_dir), schema)
+
+    def add_document(
+        self,
+        title: str,
+        content: str,
+        doc_type: DocumentType,
+        tags: Optional[List[str]] = None,
+        filepath: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        doc_id: Optional[str] = None
+    ) -> str:
+        if doc_id is None:
+            doc_id = f"doc-{uuid.uuid4().hex[:12]}"
+
+        writer = AsyncWriter(self.ix)
+        writer.add_document(
+            doc_id=doc_id,
+            title=title,
+            content=content,
+            doc_type=doc_type.value,
+            tags=",".join(tags or []),
+            filepath=filepath or "",
+            metadata=str(metadata or {})
+        )
+        writer.commit()
+
+        return doc_id
+
+    def search(
+        self,
+        query: str,
+        limit: int = 10,
+        doc_type: Optional[DocumentType] = None
+    ) -> List[Dict[str, Any]]:
+        with self.ix.searcher() as searcher:
+            parser = MultifieldParser(["title", "content"], schema=self.ix.schema)
+            q = parser.parse(query)
+
+            results = searcher.search(q, limit=limit)
+
+            docs = []
+            for hit in results:
+                doc = {
+                    "doc_id": hit["doc_id"],
+                    "title": hit["title"],
+                    "content": hit["content"],
+                    "doc_type": hit["doc_type"],
+                    "score": hit.score,
+                }
+
+                if doc_type is None or doc["doc_type"] == doc_type.value:
+                    docs.append(doc)
+
+            return docs
+
+    def get_document_count(self) -> int:
+        with self.ix.searcher() as searcher:
+            return searcher.doc_count_all()

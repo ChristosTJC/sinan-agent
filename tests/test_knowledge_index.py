@@ -19,3 +19,32 @@ def test_knowledge_index_create_schema():
         assert "title" in schema.names()
         assert "content" in schema.names()
         assert "doc_type" in schema.names()
+
+def test_add_document():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        index = KnowledgeIndex(index_dir=tmpdir)
+
+        doc_id = index.add_document(
+            title="STM32F405 定时器",
+            content="STM32F405 有 14 个定时器，最高频率 168MHz",
+            doc_type=DocumentType.MCU,
+            tags=["stm32", "timer"],
+            filepath="/path/to/doc.md"
+        )
+
+        assert doc_id is not None
+        assert index.get_document_count() == 1
+
+def test_search_documents():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        index = KnowledgeIndex(index_dir=tmpdir)
+
+        index.add_document(
+            title="STM32F405",
+            content="168MHz ARM Cortex-M4",
+            doc_type=DocumentType.MCU
+        )
+
+        results = index.search("STM32F405", limit=10)
+        assert len(results) == 1
+        assert "STM32F405" in results[0]["title"]

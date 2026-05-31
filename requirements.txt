@@ -1,0 +1,16 @@
+# 司南 (Sinán) Embedded Agent 依赖
+# 核心依赖（必装）
+pyyaml>=6.0
+prompt_toolkit>=3.0
+rich>=13.0
+httpx>=0.25
+pyserial>=3.5
+pydantic>=2.0.0
+
+# 开发和测试依赖
+pytest>=7.0.0
+pytest-cov>=4.0.0
+
+# 可选依赖（按需安装）
+# jsonschema>=4.0       # 板卡配置 JSON Schema 校验
+# esptool>=4.0          # ESP32 烧录

@@ -180,3 +180,88 @@ def test_task_manager_circular_dependency():
     # 尝试创建循环依赖
     with pytest.raises(ValueError, match="循环依赖"):
         manager.update_dependencies(task_a.id, [task_b.id])
+
+
+# ============================================================
+# TaskExecutor 测试
+# ============================================================
+
+from agent.tasks.executor import TaskExecutor
+
+
+def test_task_executor_sync():
+    """测试同步执行任务"""
+    manager = TaskManager()
+    executor = TaskExecutor(manager)
+
+    def sample_executor():
+        return "执行成功"
+
+    task = manager.create_task(
+        name="sync_task",
+        type=TaskType.TOOL_CALL,
+        executor=sample_executor,
+        args={},
+        dependencies=[],
+    )
+
+    result = executor.execute_task(task.id)
+
+    assert result.success is True
+    assert result.output == "执行成功"
+    assert manager.tasks[task.id].status == TaskStatus.COMPLETED
+
+
+def test_task_executor_error_handling():
+    """测试错误处理"""
+    manager = TaskManager()
+    executor = TaskExecutor(manager)
+
+    def failing_executor():
+        raise RuntimeError("模拟错误")
+
+    task = manager.create_task(
+        name="failing_task",
+        type=TaskType.TOOL_CALL,
+        executor=failing_executor,
+        args={},
+        dependencies=[],
+    )
+
+    result = executor.execute_task(task.id)
+
+    assert result.success is False
+    assert "模拟错误" in result.error
+    assert manager.tasks[task.id].status == TaskStatus.FAILED
+
+
+def test_task_executor_parallel():
+    """测试并行执行多个任务"""
+    import time
+
+    manager = TaskManager()
+    executor = TaskExecutor(manager, max_workers=3)
+
+    def slow_executor(duration: float):
+        time.sleep(duration)
+        return f"完成 {duration}s"
+
+    tasks = []
+    for i in range(3):
+        task = manager.create_task(
+            name=f"parallel_task_{i}",
+            type=TaskType.TOOL_CALL,
+            executor=lambda d=i * 0.1: slow_executor(d),
+            args={},
+            dependencies=[],
+        )
+        tasks.append(task)
+
+    start = time.time()
+    results = executor.execute_parallel([t.id for t in tasks])
+    elapsed = time.time() - start
+
+    # 并行执行应该比串行快
+    assert elapsed < 0.5  # 串行需要 0 + 0.1 + 0.2 = 0.3s，并行应该 < 0.5s
+    assert all(r.success for r in results)
+    assert all(manager.tasks[t.id].status == TaskStatus.COMPLETED for t in tasks)

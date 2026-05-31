@@ -43,17 +43,17 @@ class Task:
     status: TaskStatus
 
     executor: Optional[Callable]
-    args: dict
+    args: dict = field(default_factory=dict)
 
-    dependencies: list[str]
-    children: list['Task']
+    dependencies: list[str] = field(default_factory=list)
+    children: list['Task'] = field(default_factory=list)
 
-    result: Optional[TaskResult]
+    result: Optional[TaskResult] = None
 
-    created_at: datetime
-    started_at: Optional[datetime]
-    completed_at: Optional[datetime]
-    progress: float
+    created_at: datetime = field(default_factory=datetime.now)
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    progress: float = 0.0
 
     checkpoint_data: Optional[dict] = None
 
@@ -61,7 +61,8 @@ class Task:
         """计算任务执行时长（秒）"""
         if self.started_at is None or self.completed_at is None:
             return 0.0
-        return (self.completed_at - self.started_at).total_seconds()
+        delta = (self.completed_at - self.started_at).total_seconds()
+        return max(0.0, delta)  # 保证非负
 
     def compress_result(self, max_chars: int = 400) -> str:
         """压缩结果输出（保留头尾各 max_chars/2 字符）"""
@@ -73,4 +74,8 @@ class Task:
             return output_str
 
         half = max_chars // 2
-        return f"{output_str[:half]}\n... (已截断 {len(output_str) - max_chars} 字符) ...\n{output_str[-half:]}"
+        kept_chars = half * 2
+        truncated_chars = len(output_str) - kept_chars
+        compressed = f"{output_str[:half]}\n... (已截断 {truncated_chars} 字符) ...\n{output_str[-half:]}"
+        self.result.compressed = True  # 标记压缩状态
+        return compressed

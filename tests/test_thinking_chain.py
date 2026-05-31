@@ -1,6 +1,7 @@
 """思维链单元测试"""
 
 from agent.context.thinking_chain import ThinkingStep, ThinkingType, ThinkingChain
+from agent.repl.thinking_renderer import ThinkingRenderer
 
 
 def test_thinking_step_creation():
@@ -38,3 +39,17 @@ def test_thinking_chain_get_tree():
     assert tree[0].step.step_id == root_id
     assert len(tree[0].children) == 1
     assert tree[0].children[0].step.step_id == child_id
+
+
+def test_thinking_renderer_basic():
+    """测试 ThinkingRenderer 基本渲染"""
+    chain = ThinkingChain(session_id="test")
+    chain.add_step(ThinkingType.REASONING, "分析需求")
+    chain.add_step(ThinkingType.DECISION, "决定方案")
+
+    renderer = ThinkingRenderer()
+    output = renderer.render(chain)
+
+    assert "🧠 reasoning" in output
+    assert "✅ decision" in output
+    assert "分析需求" in output

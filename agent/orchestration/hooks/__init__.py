@@ -86,3 +86,8 @@ class HookChain:
 
     def __len__(self) -> int:
         return len(self._hooks)
+
+    def has_danger_gate(self) -> bool:
+        """HookChain 是否包含 DangerGateHook。"""
+        from agent.orchestration.hooks.danger_gate import DangerGateHook
+        return any(isinstance(h, DangerGateHook) for h in self._hooks)

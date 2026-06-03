@@ -51,20 +51,15 @@ def read_file(
     offset: int = 0,
     limit: int = 2000,
 ) -> dict[str, Any]:
-    """读取文件内容。
+    if isinstance(file_path, dict):
+        args = file_path
+        file_path = args.get("file_path", "")
+        offset = args.get("offset", offset)
+        limit = args.get("limit", limit)
 
-    Args:
-        file_path (str): 文件绝对路径 [required]
-        offset (int): 起始行号（1-based，0 表示从头开始）
-        limit (int): 最大读取行数（默认 2000）
-
-    Returns:
-        包含 type/content/line_count/file_path 的 dict。
-        type 为 "text"/"image"/"directory"/"error"。
-    """
     path = _resolve_path(file_path)
     if not path:
-        fname = file_path.get("file_path", str(file_path)) if isinstance(file_path, dict) else file_path
+        fname = file_path if isinstance(file_path, str) else str(file_path)
         return {"type": "error", "error": f"路径不存在: {fname}", "success": False}
 
     # 目录

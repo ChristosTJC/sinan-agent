@@ -124,17 +124,19 @@ class AuditLogger:
 
     def log_tool_call(self, tool_name: str, danger_level: str, arguments: dict,
                       result: dict, duration_ms: float, success: bool):
-        """记录一次工具调用（自动脱敏参数值）。"""
+        """记录一次工具调用（递归脱敏参数值）。"""
         from agent.diagnostics import redact_text
 
-        sanitized_args = {}
-        for k, v in arguments.items():
-            if k == "data":
-                continue
-            if isinstance(v, str):
-                sanitized_args[k] = redact_text(v)
-            else:
-                sanitized_args[k] = v
+        def _sanitize(obj):
+            if isinstance(obj, str):
+                return redact_text(obj)
+            if isinstance(obj, dict):
+                return {k: _sanitize(v) for k, v in obj.items() if k != "data"}
+            if isinstance(obj, list):
+                return [_sanitize(v) for v in obj]
+            return obj
+
+        sanitized_args = _sanitize(arguments)
 
         entry = {
             "timestamp": _datetime.now().isoformat(),
@@ -1191,9 +1193,10 @@ class ToolRegistry:
         danger_level = self.get_danger_level(name)
 
         # ── Hook 链：pre-exec ──
-        hook_rejected = False
+        _has_danger_gate = False
         if self._hook_chain is not None:
             from agent.orchestration.hooks import ToolUseContext
+            _has_danger_gate = self._hook_chain.has_danger_gate()
             ctx = ToolUseContext(
                 tool_name=name,
                 danger_level=danger_level.value,
@@ -1205,9 +1208,10 @@ class ToolRegistry:
                 self._audit.log_tool_call(name, danger_level.value, arguments, result, 0.0, False)
                 self._hook_chain.run_post_tool_use(ctx)
                 return result
-            hook_rejected = False
-        else:
-            # ── 向后兼容：原有 confirm_callback 门控 ──
+            arguments = ctx.arguments
+
+        # ── 旧门控：仅在无 DangerGateHook 时生效 ──
+        if not _has_danger_gate:
             if self._danger_confirm and danger_level in (DangerLevel.MEDIUM, DangerLevel.HIGH):
                 if self._confirm_callback is None:
                     result = {

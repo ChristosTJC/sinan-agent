@@ -120,11 +120,14 @@ def shell_command(arguments: dict) -> dict[str, Any]:
                 "denied": True, "truncated": False}
 
     # 2. 项目作用域检查
-    project_root = str(Path.cwd().resolve())
-    cwd_resolved = str(Path(os.path.expanduser(cwd)).resolve())
-    if not allow_outside and not cwd_resolved.startswith(project_root):
-        return {"success": False, "error": f"不允许项目外执行: {cwd_resolved} 不在 {project_root} 内",
-                "command": command, "denied": True, "truncated": False}
+    project_root = Path.cwd().resolve()
+    cwd_resolved = Path(os.path.expanduser(cwd)).resolve()
+    if not allow_outside:
+        try:
+            cwd_resolved.relative_to(project_root)
+        except ValueError:
+            return {"success": False, "error": f"不允许项目外执行: {cwd_resolved} 不在 {project_root} 内",
+                    "command": command, "denied": True, "truncated": False}
 
     # 3. 执行
     try:

@@ -19,9 +19,9 @@ from agent.tools.path_rules import validate_path
 
 
 def edit_file(
-    file_path: str,
-    old_string: str,
-    new_string: str,
+    file_path: str = "",
+    old_string: str = "",
+    new_string: str = "",
     replace_all: bool = False,
 ) -> dict[str, Any]:
     """精确字符串替换编辑文件。
@@ -39,9 +39,9 @@ def edit_file(
     if isinstance(file_path, dict):
         args = file_path
         file_path = args.get("file_path", "")
-        old_string = args.get("old_string", old_string)
-        new_string = args.get("new_string", new_string)
-        replace_all = args.get("replace_all", replace_all)
+        old_string = args.get("old_string", "")
+        new_string = args.get("new_string", "")
+        replace_all = args.get("replace_all", False)
 
     allowed, reason = validate_path(file_path, mode="write")
     if not allowed:

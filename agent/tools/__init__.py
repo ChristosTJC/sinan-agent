@@ -195,6 +195,7 @@ class ToolRegistry:
         self._memory_tools_registered: bool = False
         self._danger_confirm: bool = True
         self._confirm_callback: Optional[Callable[[str, str, dict], bool]] = None
+        self._hook_chain = None  # HookChain 或 None（惰性初始化）
 
     # ------------------------------------------------------------------
     # 注册
@@ -996,6 +997,21 @@ class ToolRegistry:
         """
         self._danger_confirm = enabled
 
+    def set_hook_chain(self, hook_chain) -> None:
+        """设置 Hook 链 — 在工具调用前后插入可组合的拦截逻辑。
+
+        Hook 链为空时行为不变。设置后 call_tool() 会在
+        pre-exec / post-exec / error 三个 sandwich 点调用 HookChain。
+
+        与现有 confirm_callback 的关系：
+        如果设置了 HookChain 但未包含 DangerGateHook，
+        现有的 confirm_callback 机制仍生效作为 fallback。
+
+        Args:
+            hook_chain: agent.orchestration.hooks.HookChain 实例。
+        """
+        self._hook_chain = hook_chain
+
     # ------------------------------------------------------------------
     # 调用
     # ------------------------------------------------------------------
@@ -1004,6 +1020,8 @@ class ToolRegistry:
         """调用一个已注册的工具并返回结果。
 
         自动确保工具已被发现（首次调用时触发 ``discover()``）。
+        Hook 链：如果通过 set_hook_chain() 设置了 HookChain，
+        会在 pre-exec / post-exec / error 三个点调用所有注册的 Hook。
 
         Args:
             name: 工具名称。
@@ -1036,35 +1054,77 @@ class ToolRegistry:
 
         danger_level = self.get_danger_level(name)
 
-        # 危险工具确认门控 — 覆盖 MEDIUM 和 HIGH 等级
-        if self._danger_confirm and danger_level in (DangerLevel.MEDIUM, DangerLevel.HIGH):
-            if self._confirm_callback is None:
-                result = {
-                    "success": False,
-                    "error": f"危险工具 '{name}' (等级: {danger_level.value}) 需要确认，但未设置确认回调",
-                }
+        # ── Hook 链：pre-exec ──
+        hook_rejected = False
+        if self._hook_chain is not None:
+            from agent.orchestration.hooks import ToolUseContext
+            ctx = ToolUseContext(
+                tool_name=name,
+                danger_level=danger_level.value,
+                arguments=arguments,
+            )
+            ctx = self._hook_chain.run_pre_tool_use(ctx)
+            if not ctx.approved:
+                result = {"success": False, "error": ctx.error or f"工具 '{name}' 被 Hook 拒绝"}
                 self._audit.log_tool_call(name, danger_level.value, arguments, result, 0.0, False)
+                self._hook_chain.run_post_tool_use(ctx)
                 return result
-            if not self._confirm_callback(name, danger_level.value, arguments):
-                result = {
-                    "success": False,
-                    "error": f"用户拒绝执行危险工具 '{name}' (等级: {danger_level.value})",
-                }
-                self._audit.log_tool_call(name, danger_level.value, arguments, result, 0.0, False)
-                return result
+            hook_rejected = False
+        else:
+            # ── 向后兼容：原有 confirm_callback 门控 ──
+            if self._danger_confirm and danger_level in (DangerLevel.MEDIUM, DangerLevel.HIGH):
+                if self._confirm_callback is None:
+                    result = {
+                        "success": False,
+                        "error": f"危险工具 '{name}' (等级: {danger_level.value}) 需要确认，但未设置确认回调",
+                    }
+                    self._audit.log_tool_call(name, danger_level.value, arguments, result, 0.0, False)
+                    return result
+                if not self._confirm_callback(name, danger_level.value, arguments):
+                    result = {
+                        "success": False,
+                        "error": f"用户拒绝执行危险工具 '{name}' (等级: {danger_level.value})",
+                    }
+                    self._audit.log_tool_call(name, danger_level.value, arguments, result, 0.0, False)
+                    return result
 
         start_time = _time.time()
+        result = {}
         try:
             result = handler(arguments)
-            # 确保返回值是 dict
             if not isinstance(result, dict):
                 result = {"success": True, "result": result}
             elif "success" not in result:
                 result["success"] = True
+
+            # ── Hook 链：post-exec ──
+            if self._hook_chain is not None:
+                _ctx = ToolUseContext(
+                    tool_name=name,
+                    danger_level=danger_level.value,
+                    arguments=arguments,
+                    result=result,
+                    duration_ms=(_time.time() - start_time) * 1000.0,
+                )
+                self._hook_chain.run_post_tool_use(_ctx)
+
             return result
         except Exception as exc:
             logger.exception("工具调用异常 '%s': %s", name, exc)
             result = {"success": False, "error": f"工具执行异常: {exc}"}
+
+            # ── Hook 链：error ──
+            if self._hook_chain is not None:
+                _ctx = ToolUseContext(
+                    tool_name=name,
+                    danger_level=danger_level.value,
+                    arguments=arguments,
+                    error=str(exc),
+                    duration_ms=(_time.time() - start_time) * 1000.0,
+                )
+                _ctx.approved = False
+                self._hook_chain.run_tool_error(_ctx)
+
             return result
         finally:
             duration_ms = (_time.time() - start_time) * 1000.0

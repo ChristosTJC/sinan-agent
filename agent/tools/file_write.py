@@ -17,8 +17,8 @@ from agent.tools.path_rules import validate_path
 
 
 def write_file(
-    file_path: str,
-    content: str,
+    file_path: str = "",
+    content: str = "",
 ) -> dict[str, Any]:
     """写入内容到文件（创建或覆盖）。
 
@@ -33,7 +33,7 @@ def write_file(
     if isinstance(file_path, dict):
         args = file_path
         file_path = args.get("file_path", "")
-        content = args.get("content", content)
+        content = args.get("content", "")
 
     allowed, reason = validate_path(file_path, mode="write")
     if not allowed:

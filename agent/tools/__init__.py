@@ -125,18 +125,24 @@ class AuditLogger:
     def log_tool_call(self, tool_name: str, danger_level: str, arguments: dict,
                       result: dict, duration_ms: float, success: bool):
         """记录一次工具调用（递归脱敏参数值）。"""
-        from agent.diagnostics import redact_text
+        from agent.diagnostics import _is_sensitive_env_key, redact_text
 
-        def _sanitize(obj):
+        def _sanitize(obj, key: str | None = None):
+            if key is not None and _is_sensitive_env_key(str(key)):
+                return "[REDACTED]"
             if isinstance(obj, str):
                 return redact_text(obj)
             if isinstance(obj, dict):
-                return {k: _sanitize(v) for k, v in obj.items() if k != "data"}
+                return {k: _sanitize(v, str(k)) for k, v in obj.items() if k != "data"}
             if isinstance(obj, list):
-                return [_sanitize(v) for v in obj]
+                return [_sanitize(v, key) for v in obj]
             return obj
 
         sanitized_args = _sanitize(arguments)
+        result_summary = (
+            "ok" if success
+            else redact_text(str(result.get("error", "ok")))[:200]
+        )
 
         entry = {
             "timestamp": _datetime.now().isoformat(),
@@ -145,7 +151,7 @@ class AuditLogger:
             "arguments": sanitized_args,
             "success": success,
             "duration_ms": round(duration_ms, 2),
-            "result_summary": str(result.get("error", "ok"))[:200] if not success else "ok"
+            "result_summary": result_summary,
         }
         log_file = self._log_dir / f"audit-{_datetime.now().strftime('%Y%m%d')}.jsonl"
         with self._lock:

@@ -232,6 +232,38 @@ class TestToolRegistry:
         assert "port" in schema["required"]
         assert "baud" not in schema["required"]
 
+    def test_audit_logger_recursively_redacts_sensitive_values(self, tmp_path):
+        from agent.tools import AuditLogger
+
+        audit = AuditLogger(log_dir=str(tmp_path))
+        audit.log_tool_call(
+            "mcp_server_connect",
+            "medium",
+            {
+                "server_name": "demo",
+                "env": {
+                    "API_KEY": "sk-secret-12345",
+                    "TOKEN": "tok-secret",
+                    "NORMAL_VAR": "visible",
+                },
+                "headers": {"Authorization": "Bearer abc123"},
+                "nested": [{"password": "supersecret"}],
+                "content": "password=inline-secret",
+            },
+            {"success": False, "error": "token=error-secret"},
+            1.0,
+            False,
+        )
+
+        log_text = next(tmp_path.glob("audit-*.jsonl")).read_text(encoding="utf-8")
+        assert "sk-secret-12345" not in log_text
+        assert "tok-secret" not in log_text
+        assert "Bearer abc123" not in log_text
+        assert "supersecret" not in log_text
+        assert "inline-secret" not in log_text
+        assert "error-secret" not in log_text
+        assert "visible" in log_text
+
     def test_discover_registers_nrfjprog_flash_tool(self):
         from agent.tools import DangerLevel
 

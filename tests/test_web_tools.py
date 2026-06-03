@@ -25,8 +25,15 @@ class TestWebFetch:
         result = web_fetch({})
         assert result["success"] is False
 
-    def test_has_source_field(self):
+    def test_has_source_field(self, monkeypatch):
+        import httpx
         from agent.tools.web_tools import web_fetch
+
+        def fake_get(*args, **kwargs):
+            raise httpx.ConnectError("no server")
+
+        monkeypatch.setattr(httpx.Client, "get", fake_get)
+
         result = web_fetch({"url": "http://localhost:1/no-server-here"})
         assert "source" in result
         assert result["success"] is False

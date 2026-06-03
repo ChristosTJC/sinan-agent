@@ -933,6 +933,49 @@ class ToolRegistry:
         except ImportError as exc:
             logger.warning("编排任务工具不可用: %s", exc)
 
+        # ── shell_command ──
+        try:
+            from agent.tools.shell_command import shell_command as _shell_cmd
+
+            self.register("shell_command", _shell_cmd,
+                          description="执行受限 shell 命令（deny patterns + 项目作用域 + 输出截断）",
+                          danger_level=DangerLevel.MEDIUM,
+                          timeout_sec=120,
+                          parameters={
+                              "command": {"type": "string", "description": "要执行的命令 [required]", "required": True},
+                              "timeout_sec": {"type": "integer", "description": "超时秒数 (默认 30, 最大 120)", "required": False},
+                              "max_output_bytes": {"type": "integer", "description": "最大输出字节数 (默认 100000)", "required": False},
+                              "cwd": {"type": "string", "description": "工作目录 (默认项目根)", "required": False},
+                              "allow_outside_project": {"type": "boolean", "description": "是否允许项目外执行 (默认 false)", "required": False},
+                          })
+        except ImportError as exc:
+            logger.warning("工具 shell_command 不可用: %s", exc)
+
+        # ── web_search / web_fetch ──
+        try:
+            from agent.tools.web_tools import web_search as _web_search, web_fetch as _web_fetch
+
+            self.register("web_search", _web_search,
+                          description="Web 搜索（DuckDuckGo，免 API key）",
+                          danger_level=DangerLevel.LOW,
+                          timeout_sec=15,
+                          parameters={
+                              "query": {"type": "string", "description": "搜索关键词 [required]", "required": True},
+                              "limit": {"type": "integer", "description": "最大结果数 (默认 5, 最大 10)", "required": False},
+                              "timeout_sec": {"type": "number", "description": "超时秒数 (默认 15)", "required": False},
+                          })
+            self.register("web_fetch", _web_fetch,
+                          description="抓取网页内容（HTTP GET + HTML 清洗 + 截断）",
+                          danger_level=DangerLevel.LOW,
+                          timeout_sec=30,
+                          parameters={
+                              "url": {"type": "string", "description": "目标 URL [required]", "required": True},
+                              "max_chars": {"type": "integer", "description": "最大返回字符数 (默认 100000)", "required": False},
+                              "timeout_sec": {"type": "number", "description": "超时秒数 (默认 15)", "required": False},
+                          })
+        except ImportError as exc:
+            logger.warning("Web 工具不可用: %s", exc)
+
         logger.info("工具发现完成，已注册 %d 个工具", len(self._tools))
 
     # ------------------------------------------------------------------

@@ -5,7 +5,7 @@ from agent.orchestration.events import (
     ToolStartEvent, ToolDoneEvent, ToolErrorEvent,
     ApprovalRequiredEvent, ApprovalGrantedEvent, ApprovalDeniedEvent,
     RunStartEvent, RunDoneEvent, PhaseStartEvent, PhaseDoneEvent,
-    StepStartEvent, StepDoneEvent,
+    StepStartEvent, StepDoneEvent, StepBlockedEvent, StepSkippedEvent,
 )
 from agent.orchestration.task_types import (
     TaskStateBase, OrchestrationTaskType, OrchestrationTaskStatus,
@@ -18,7 +18,7 @@ __all__ = [
     "ToolStartEvent", "ToolDoneEvent", "ToolErrorEvent",
     "ApprovalRequiredEvent", "ApprovalGrantedEvent", "ApprovalDeniedEvent",
     "RunStartEvent", "RunDoneEvent", "PhaseStartEvent", "PhaseDoneEvent",
-    "StepStartEvent", "StepDoneEvent",
+    "StepStartEvent", "StepDoneEvent", "StepBlockedEvent", "StepSkippedEvent",
     "TaskStateBase", "OrchestrationTaskType", "OrchestrationTaskStatus",
     "generate_task_id", "is_terminal_status",
     "AgentTool", "AgentRunConfig", "AgentRunResult",

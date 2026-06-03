@@ -138,3 +138,39 @@ class StepDoneEvent:
     summary: str = ""
     type: str = field(init=False, default=EventType.STEP_DONE.value)
     timestamp: float = field(init=False, default_factory=_now)
+
+
+@dataclass
+class StepBlockedEvent:
+    step_id: Any
+    action: str
+    tool: Optional[str] = None
+    danger_level: str = "safe"
+    reason: str = ""
+    type: str = field(init=False, default=EventType.STEP_BLOCKED.value)
+    timestamp: float = field(init=False, default_factory=_now)
+
+
+@dataclass
+class StepSkippedEvent:
+    step_id: Any
+    action: str
+    tool: Optional[str] = None
+    reason: str = ""
+    type: str = field(init=False, default=EventType.STEP_SKIPPED.value)
+    timestamp: float = field(init=False, default_factory=_now)
+
+
+def sanitize_event_payload(obj: Any, key: str | None = None) -> Any:
+    """Recursively redact event payloads before they are written to logs."""
+    from agent.diagnostics import _is_sensitive_env_key, redact_text
+
+    if key is not None and _is_sensitive_env_key(str(key)):
+        return "[REDACTED]"
+    if isinstance(obj, str):
+        return redact_text(obj)
+    if isinstance(obj, dict):
+        return {k: sanitize_event_payload(v, str(k)) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [sanitize_event_payload(v, key) for v in obj]
+    return obj

@@ -136,6 +136,12 @@ def test_run_loop_executes_safe_tool_and_writes_artifacts(tmp_path):
     assert task["success"] is True
     trace = (run_dir / "trace.jsonl").read_text(encoding="utf-8")
     assert "scan_serial" in trace
+    event_types = [
+        json.loads(line)["type"]
+        for line in (run_dir / "event.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert "step_start" in event_types
+    assert "step_done" in event_types
 
 
 def test_run_loop_blocks_dangerous_tool_without_yes(tmp_path):
@@ -153,6 +159,10 @@ def test_run_loop_blocks_dangerous_tool_without_yes(tmp_path):
     report = (tmp_path / "home" / "runs" / result["run_id"] / "report.md").read_text(encoding="utf-8")
     assert "需要确认" in report
     assert "build_firmware" in report
+
+    event_path = tmp_path / "home" / "runs" / result["run_id"] / "event.jsonl"
+    event_types = [json.loads(line)["type"] for line in event_path.read_text(encoding="utf-8").splitlines()]
+    assert "step_blocked" in event_types
 
 
 def test_run_loop_stops_after_first_failed_step(tmp_path):
@@ -173,6 +183,10 @@ def test_run_loop_stops_after_first_failed_step(tmp_path):
     assert steps[0]["status"] == "failed"
     assert steps[1]["status"] == "skipped_previous_failure"
     assert steps[1]["tool"] == "scan_usb"
+
+    event_path = tmp_path / "home" / "runs" / result["run_id"] / "event.jsonl"
+    event_types = [json.loads(line)["type"] for line in event_path.read_text(encoding="utf-8").splitlines()]
+    assert "step_skipped" in event_types
 
 
 def test_fallback_plan_maps_build_and_flash_to_dangerous_tools(tmp_path):

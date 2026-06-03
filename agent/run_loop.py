@@ -41,7 +41,8 @@ class RunTraceWriter:
     def write_sinan_event(self, event) -> None:
         """Write a SinanEvent dataclass as structured JSONL."""
         from dataclasses import asdict
-        d = asdict(event)
+        from agent.orchestration.events import sanitize_event_payload
+        d = sanitize_event_payload(asdict(event))
         with self.event_path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(d, ensure_ascii=False, default=str) + "\n")
 
@@ -319,7 +320,7 @@ class SinanRunController:
         from agent.orchestration.events import (
             RunStartEvent, RunDoneEvent,
             PhaseStartEvent, PhaseDoneEvent,
-            StepStartEvent, StepDoneEvent,
+            StepStartEvent, StepDoneEvent, StepBlockedEvent, StepSkippedEvent,
         )
         try:
             if event == "run_start":
@@ -353,6 +354,19 @@ class SinanRunController:
                                   tool=payload.get("tool"),
                                   success=payload.get("success", True),
                                   summary=payload.get("summary", "")))
+            elif event == "step_blocked":
+                self.writer.write_sinan_event(
+                    StepBlockedEvent(step_id=payload.get("step_id", ""),
+                                     action=payload.get("action", ""),
+                                     tool=payload.get("tool"),
+                                     danger_level=payload.get("danger_level", "safe"),
+                                     reason=payload.get("error", payload.get("status", ""))))
+            elif event == "step_skipped":
+                self.writer.write_sinan_event(
+                    StepSkippedEvent(step_id=payload.get("step_id", ""),
+                                     action=payload.get("action", ""),
+                                     tool=payload.get("tool"),
+                                     reason=payload.get("error", payload.get("status", ""))))
         except Exception:
             pass
 

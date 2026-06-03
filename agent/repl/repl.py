@@ -856,9 +856,10 @@ class SinanREPL:
         name = tool_call.name
         args = tool_call.arguments
         start_time = __import__("time").time()
+        danger = self.tool_registry.get_danger_level(name).value
 
         # 发射 ToolStartEvent
-        self._emit_tool_event("start", name, "safe", args)
+        self._emit_tool_event("start", name, danger, args)
 
         # 状态回调
         status_callback(name, "running")
@@ -888,7 +889,6 @@ class SinanREPL:
             status_callback(name, "rejected" if approved["value"] is False else "done")
             # 发射 ToolDoneEvent
             duration = (__import__("time").time() - start_time) * 1000.0
-            danger = self.tool_registry.get_danger_level(name).value
             success = result.get("success", False)
             self._emit_tool_event("done", name, danger, args,
                                   success=success, duration=duration,
@@ -951,9 +951,10 @@ class SinanREPL:
         try:
             from dataclasses import asdict
             from pathlib import Path
+            from agent.orchestration.events import sanitize_event_payload
             log_dir = Path.home() / ".sinan" / "repl_events"
             log_dir.mkdir(parents=True, exist_ok=True)
-            d = asdict(event)
+            d = sanitize_event_payload(asdict(event))
             d.setdefault("timestamp", __import__("time").time())
             with open(log_dir / "event.jsonl", "a") as f:
                 f.write(__import__("json").dumps(d, ensure_ascii=False, default=str) + "\n")

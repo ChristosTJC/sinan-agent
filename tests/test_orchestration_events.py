@@ -157,6 +157,20 @@ class TestRunPhaseEvents:
         assert event.type == "phase_start"
         assert event.phase == "plan"
 
+    def test_step_blocked_event(self):
+        from agent.orchestration.events import StepBlockedEvent
+
+        event = StepBlockedEvent(step_id=1, action="烧录", tool="flash_firmware", danger_level="high", reason="需要确认")
+        assert event.type == "step_blocked"
+        assert event.danger_level == "high"
+
+    def test_step_skipped_event(self):
+        from agent.orchestration.events import StepSkippedEvent
+
+        event = StepSkippedEvent(step_id=2, action="复测", tool="serial_monitor", reason="前序失败")
+        assert event.type == "step_skipped"
+        assert event.reason == "前序失败"
+
 
 class TestSinanEventBase:
     """事件基类."""
@@ -179,4 +193,21 @@ class TestSinanEventBase:
             assert e.type, f"missing type: {e}"
             assert e.timestamp > 0, f"missing timestamp: {e}"
 
+    def test_sanitize_event_payload_redacts_nested_sensitive_values(self):
+        from agent.orchestration.events import sanitize_event_payload
+
+        payload = {
+            "env": {"TOKEN": "tok-secret", "NORMAL_VAR": "visible"},
+            "headers": {"Authorization": "Bearer abc123"},
+            "content": "password=inline-secret",
+            "nested": [{"api_key": "sk-secret-12345"}],
+        }
+
+        sanitized = sanitize_event_payload(payload)
+        text = json.dumps(sanitized, ensure_ascii=False)
+        assert "tok-secret" not in text
+        assert "Bearer abc123" not in text
+        assert "inline-secret" not in text
+        assert "sk-secret-12345" not in text
+        assert "visible" in text
 

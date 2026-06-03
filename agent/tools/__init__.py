@@ -886,6 +886,53 @@ class ToolRegistry:
         except ImportError as exc:
             logger.warning("工具 glob 不可用: %s", exc)
 
+        # ── 编排任务工具 ──
+        try:
+            from agent.orchestration.task_tools import (
+                task_create, task_list, task_get, task_update, task_stop, task_output
+            )
+            self.register("task_create", task_create,
+                          description="创建编排任务（本地子智能体或硬件操作）",
+                          parameters={
+                              "agent_type": {"type": "string", "description": "任务类型: local_agent 或 hardware_op", "required": False},
+                              "description": {"type": "string", "description": "任务描述 [required]", "required": True},
+                              "owner": {"type": "string", "description": "归属智能体名称", "required": False},
+                              "allowed_tools": {"type": "array", "items": {"type": "string"}, "description": "允许使用的工具列表", "required": False},
+                              "metadata": {"type": "object", "description": "扩展元数据", "required": False},
+                          })
+            self.register("task_list", task_list,
+                          description="列出所有编排任务",
+                          parameters={
+                              "status": {"type": "string", "description": "按状态过滤", "required": False},
+                          })
+            self.register("task_get", task_get,
+                          description="获取任务详情",
+                          parameters={
+                              "task_id": {"type": "string", "description": "任务 ID [required]", "required": True},
+                          })
+            self.register("task_update", task_update,
+                          description="更新任务状态",
+                          parameters={
+                              "task_id": {"type": "string", "description": "任务 ID [required]", "required": True},
+                              "status": {"type": "string", "description": "新状态: pending/in_progress/completed/failed/killed", "required": False},
+                              "owner": {"type": "string", "description": "新的归属智能体", "required": False},
+                              "metadata": {"type": "object", "description": "扩展元数据", "required": False},
+                          })
+            self.register("task_stop", task_stop,
+                          description="停止运行中的任务",
+                          parameters={
+                              "task_id": {"type": "string", "description": "任务 ID [required]", "required": True},
+                              "force": {"type": "boolean", "description": "强制停止 (硬件操作默认需要)", "required": False},
+                          })
+            self.register("task_output", task_output,
+                          description="获取任务输出内容",
+                          parameters={
+                              "task_id": {"type": "string", "description": "任务 ID [required]", "required": True},
+                              "max_bytes": {"type": "integer", "description": "最大输出字节数 (默认 100000)", "required": False},
+                          })
+        except ImportError as exc:
+            logger.warning("编排任务工具不可用: %s", exc)
+
         logger.info("工具发现完成，已注册 %d 个工具", len(self._tools))
 
     # ------------------------------------------------------------------

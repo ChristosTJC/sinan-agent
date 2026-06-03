@@ -64,7 +64,8 @@ def read_file(
     """
     path = _resolve_path(file_path)
     if not path:
-        return {"type": "error", "error": f"路径不存在: {file_path}"}
+        fname = file_path.get("file_path", str(file_path)) if isinstance(file_path, dict) else file_path
+        return {"type": "error", "error": f"路径不存在: {fname}", "success": False}
 
     # 目录
     if path.is_dir():
@@ -77,7 +78,7 @@ def read_file(
 
     # 显式二进制
     if suffix in _BINARY_EXTENSIONS:
-        return {"type": "error", "error": f"二进制文件不支持文本读取: {file_path}"}
+        return {"type": "error", "error": f"二进制文件不支持文本读取: {file_path}", "success": False}
 
     # 未知扩展名 — 检测是否为文本
     if suffix not in _TEXT_EXTENSIONS:
@@ -85,7 +86,7 @@ def read_file(
             with open(path, "rb") as f:
                 chunk = f.read(1024)
             if b"\x00" in chunk:
-                return {"type": "error", "error": f"检测到二进制内容，拒绝读取: {file_path}"}
+                return {"type": "error", "error": f"检测到二进制内容，拒绝读取: {file_path}", "success": False}
         except IOError:
             pass
 
@@ -124,7 +125,7 @@ def _read_text(path: Path, offset: int, limit: int) -> dict[str, Any]:
         with open(path, "r", encoding="utf-8", errors="replace") as f:
             lines = f.readlines()
     except IOError as exc:
-        return {"type": "error", "error": f"读取失败: {exc}"}
+        return {"type": "error", "error": f"读取失败: {exc}", "success": False}
 
     total_lines = len(lines)
 
@@ -155,10 +156,10 @@ def _read_image(path: Path) -> dict[str, Any]:
     try:
         fsize = path.stat().st_size
     except OSError:
-        return {"type": "error", "error": f"无法获取文件信息: {path}"}
+        return {"type": "error", "error": f"无法获取文件信息: {path}", "success": False}
 
     if fsize > _MAX_IMAGE_SIZE:
-        return {"type": "error", "error": f"图片过大 ({fsize} bytes > {_MAX_IMAGE_SIZE})，拒绝读取"}
+        return {"type": "error", "error": f"图片过大 ({fsize} bytes > {_MAX_IMAGE_SIZE})，拒绝读取", "success": False}
 
     return {
         "type": "image",
@@ -174,7 +175,7 @@ def _read_directory(path: Path) -> dict[str, Any]:
     try:
         entries = sorted(path.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower()))
     except PermissionError:
-        return {"type": "error", "error": f"无权限读取目录: {path}"}
+        return {"type": "error", "error": f"无权限读取目录: {path}", "success": False}
 
     result = []
     for entry in entries:

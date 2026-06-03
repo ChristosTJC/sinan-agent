@@ -855,6 +855,10 @@ class SinanREPL:
         """执行单个工具调用并返回结果消息。"""
         name = tool_call.name
         args = tool_call.arguments
+        start_time = __import__("time").time()
+
+        # 发射 ToolStartEvent
+        self._emit_tool_event("start", name, "safe", args)
 
         # 状态回调
         status_callback(name, "running")
@@ -873,8 +877,22 @@ class SinanREPL:
             if self.tool_registry.is_dangerous(name):
                 self.tool_registry.set_confirm_callback(_confirm)
                 self.tool_registry.set_danger_confirm(True)
+                # 发射 ApprovalRequiredEvent
+                from agent.orchestration.events import ApprovalRequiredEvent
+                self._emit_tool_event_raw(ApprovalRequiredEvent(
+                    tool_name=name,
+                    danger_level=self.tool_registry.get_danger_level(name).value,
+                    arguments=args,
+                ))
             result = self.tool_registry.call_tool(name, args)
             status_callback(name, "rejected" if approved["value"] is False else "done")
+            # 发射 ToolDoneEvent
+            duration = (__import__("time").time() - start_time) * 1000.0
+            danger = self.tool_registry.get_danger_level(name).value
+            success = result.get("success", False)
+            self._emit_tool_event("done", name, danger, args,
+                                  success=success, duration=duration,
+                                  summary="ok" if success else result.get("error", "failed"))
             # 压缩工具输出
             output = self.message_compactor.compress_tool_result(
                 name, str(result), max_chars=400
@@ -887,6 +905,9 @@ class SinanREPL:
             }
         except Exception as exc:
             status_callback(name, "error")
+            # 发射 ToolErrorEvent
+            self._emit_tool_event("error", name, "safe", args,
+                                  error=str(exc))
             logger.exception("工具执行失败: %s", name)
             output = self.message_compactor.compress_tool_result(
                 name, f"错误: {exc}", max_chars=200
@@ -902,6 +923,42 @@ class SinanREPL:
                 self.tool_registry.set_confirm_callback(prev_callback)
             if hasattr(self.tool_registry, "set_danger_confirm"):
                 self.tool_registry.set_danger_confirm(prev_danger_confirm)
+
+    def _emit_tool_event(self, kind: str, name: str, danger: str,
+                         args: dict, **extra):
+        """Emit SinanEvent to event writer if available."""
+        e = None
+        if kind == "start":
+            from agent.orchestration.events import ToolStartEvent
+            e = ToolStartEvent(tool_name=name, danger_level=danger, arguments=args)
+        elif kind == "done":
+            from agent.orchestration.events import ToolDoneEvent
+            e = ToolDoneEvent(tool_name=name, danger_level=danger,
+                              success=extra.get("success", False),
+                              duration_ms=extra.get("duration", 0),
+                              result_summary=extra.get("summary", ""))
+        elif kind == "error":
+            from agent.orchestration.events import ToolErrorEvent
+            e = ToolErrorEvent(tool_name=name, error=extra.get("error", "unknown"))
+        if e:
+            self._write_event(e)
+
+    def _emit_tool_event_raw(self, event):
+        self._write_event(event)
+
+    def _write_event(self, event):
+        """Write SinanEvent to ~/.sinan/repl_events/event.jsonl."""
+        try:
+            from dataclasses import asdict
+            from pathlib import Path
+            log_dir = Path.home() / ".sinan" / "repl_events"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            d = asdict(event)
+            d.setdefault("timestamp", __import__("time").time())
+            with open(log_dir / "event.jsonl", "a") as f:
+                f.write(__import__("json").dumps(d, ensure_ascii=False, default=str) + "\n")
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # 主循环

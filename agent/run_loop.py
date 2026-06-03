@@ -24,18 +24,26 @@ _PHASE_LABELS = {
 
 
 class RunTraceWriter:
-    """Writes a single run's task metadata, plan, trace, and report."""
+    """Writes a single run's task metadata, plan, trace, report, and structured events."""
 
     def __init__(self, run_dir: Path) -> None:
         self.run_dir = Path(run_dir)
         self.run_dir.mkdir(parents=True, exist_ok=True)
         self.trace_path = self.run_dir / "trace.jsonl"
+        self.event_path = self.run_dir / "event.jsonl"
 
     def append_event(self, event: dict[str, Any]) -> None:
         event = dict(event)
         event.setdefault("timestamp", _now())
         with self.trace_path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(event, ensure_ascii=False, default=str) + "\n")
+
+    def write_sinan_event(self, event) -> None:
+        """Write a SinanEvent dataclass as structured JSONL."""
+        from dataclasses import asdict
+        d = asdict(event)
+        with self.event_path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(d, ensure_ascii=False, default=str) + "\n")
 
     def write_task(self, task: dict[str, Any]) -> None:
         (self.run_dir / "task.json").write_text(
@@ -302,8 +310,51 @@ class SinanRunController:
     def _emit(self, event: str, **payload: Any) -> None:
         item = {"event": event, **payload}
         self.writer.append_event(item)
+        self._emit_sinan_event(event, item)
         if self.event_callback is not None:
             self.event_callback(item)
+
+    def _emit_sinan_event(self, event: str, payload: dict[str, Any]) -> None:
+        """Map legacy event strings to SinanEvent dataclasses and write structured log."""
+        from agent.orchestration.events import (
+            RunStartEvent, RunDoneEvent,
+            PhaseStartEvent, PhaseDoneEvent,
+            StepStartEvent, StepDoneEvent,
+        )
+        try:
+            if event == "run_start":
+                self.writer.write_sinan_event(
+                    RunStartEvent(goal=payload.get("goal", ""),
+                                  run_id=payload.get("run_id", "")))
+            elif event == "run_done":
+                self.writer.write_sinan_event(
+                    RunDoneEvent(run_id=payload.get("run_id", ""),
+                                 success=payload.get("success", False),
+                                 run_dir=payload.get("run_dir", "")))
+            elif event == "phase_start":
+                self.writer.write_sinan_event(
+                    PhaseStartEvent(phase=payload.get("phase", ""),
+                                    label=payload.get("label", "")))
+            elif event == "phase_done":
+                self.writer.write_sinan_event(
+                    PhaseDoneEvent(phase=payload.get("phase", ""),
+                                   label=payload.get("label", ""),
+                                   summary=payload.get("summary", "")))
+            elif event == "step_start":
+                self.writer.write_sinan_event(
+                    StepStartEvent(step_id=payload.get("step_id", ""),
+                                   action=payload.get("action", ""),
+                                   tool=payload.get("tool"),
+                                   danger_level=payload.get("danger_level", "safe")))
+            elif event == "step_done":
+                self.writer.write_sinan_event(
+                    StepDoneEvent(step_id=payload.get("step_id", ""),
+                                  action=payload.get("action", ""),
+                                  tool=payload.get("tool"),
+                                  success=payload.get("success", True),
+                                  summary=payload.get("summary", "")))
+        except Exception:
+            pass
 
 
 def format_run_event(event: dict[str, Any]) -> str:

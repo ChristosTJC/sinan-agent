@@ -38,8 +38,8 @@ fi
 
 # 安装 Python 依赖
 echo ""
-echo "[1/5] 安装 Python 核心依赖..."
-pip install pyyaml>=6.0 prompt_toolkit>=3.0 rich>=13.0 httpx>=0.25 pyserial>=3.5
+echo "[1/5] 安装 Python 依赖..."
+pip install -r requirements.txt
 
 echo ""
 echo "[2/5] 安装可选依赖（如有需要请手动执行）..."

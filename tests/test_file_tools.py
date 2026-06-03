@@ -306,3 +306,94 @@ def test_registry_dangerous_flags():
     assert not registry.is_dangerous("read_file")
     assert not registry.is_dangerous("grep")
     assert not registry.is_dangerous("glob")
+
+
+# ─── path_rules 安全集成测试 ──────────────────────────────────
+
+
+class TestFileReadSecurity:
+    """文件读取安全校验测试."""
+
+    def test_rejects_etc_passwd(self):
+        from agent.tools.file_read import read_file
+
+        result = read_file("/etc/passwd")
+        assert result["type"] == "error"
+
+    def test_rejects_ssh_private_key(self):
+        from agent.tools.file_read import read_file
+
+        result = read_file("/root/.ssh/id_rsa")
+        assert result["type"] == "error"
+
+    def test_allows_normal_file(self):
+        from agent.tools.file_read import read_file
+
+        with tempfile.TemporaryDirectory() as tmp:
+            fpath = Path(tmp) / "ok.txt"
+            fpath.write_text("safe content")
+            result = read_file(str(fpath))
+            assert result["type"] == "text"
+            assert "safe content" in result["content"]
+
+    def test_rejects_relative_path_unchanged(self):
+        from agent.tools.file_read import read_file
+
+        result = read_file("relative/path.txt")
+        assert result["type"] == "error"
+
+
+class TestFileWriteSecurity:
+    """文件写入安全校验测试."""
+
+    def test_rejects_write_to_ssh_dir(self):
+        from agent.tools.file_write import write_file
+
+        result = write_file("/root/.ssh/authorized_keys", "evil key")
+        assert result["success"] is False
+
+    def test_rejects_write_to_etc(self):
+        from agent.tools.file_write import write_file
+
+        result = write_file("/etc/cron.d/backdoor", "* * * * * root evil")
+        assert result["success"] is False
+
+
+class TestFileEditSecurity:
+    """文件编辑安全校验测试."""
+
+    def test_rejects_edit_sensitive_file(self):
+        from agent.tools.file_edit import edit_file
+
+        result = edit_file("/etc/sudoers", "OLD", "NEW")
+        assert result["success"] is False
+
+
+class TestFileSearchSecurity:
+    """文件搜索安全校验测试."""
+
+    def test_grep_rejects_etc(self):
+        from agent.tools.file_search import grep
+
+        result = grep(".*", path="/etc")
+        assert result.get("ok") is False
+
+    def test_grep_rejects_proc(self):
+        from agent.tools.file_search import grep
+
+        result = grep(".*", path="/proc")
+        assert result.get("ok") is False
+
+    def test_grep_allows_normal_dir(self):
+        from agent.tools.file_search import grep
+
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "a.py").write_text("hello")
+            result = grep("hello", path=tmp)
+            assert result.get("ok") is True
+
+    def test_glob_rejects_etc(self):
+        from agent.tools.file_search import glob as glob_search
+
+        result = glob_search("*.conf", path="/etc")
+        assert result.get("ok") is False

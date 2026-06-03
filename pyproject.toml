@@ -1,0 +1,79 @@
+[build-system]
+requires = ["setuptools>=69.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sinan-embedded-agent"
+version = "0.1.0"
+description = "司南嵌入式智能体工作台 — 面向嵌入式开发者的全流程智能体"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [{name = "Sinán Team"}]
+keywords = ["embedded", "agent", "mcu", "iot", "robotics"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Embedded Systems",
+]
+dependencies = [
+    "pyyaml>=6.0",
+    "prompt_toolkit>=3.0",
+    "rich>=13.0",
+    "httpx[socks]>=0.25",
+    "pyserial>=3.5",
+    "pydantic>=2.0.0",
+    "whoosh>=2.7.4",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "ruff>=0.6.0",
+]
+esptool = ["esptool>=4.0"]
+jsonschema = ["jsonschema>=4.0"]
+
+[project.scripts]
+sinan = "agent.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["agent*", "knowledge*", "board_knowledge*", "skills*"]
+
+[tool.setuptools.package-data]
+knowledge = ["**/*.yaml", "**/*.yml", "**/*.md", "**/*.json"]
+board_knowledge = ["**/*.md", "**/*.json", "**/*.template.json"]
+skills = ["**/*.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = ["-v", "--tb=short"]
+markers = [
+    "unit: 快速单元测试（无 IO，单模块验证）",
+    "integration: 跨模块 / 全链路干运行测试",
+    "slow: 耗时较长的测试",
+]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E9", "F63", "F7", "F82"]
+
+[tool.coverage.run]
+source = ["agent"]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if __name__ == .__main__.:",
+]

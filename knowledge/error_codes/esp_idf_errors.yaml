@@ -1,0 +1,54 @@
+category: ESP-IDF 常见错误码
+errors:
+  ESP_OK:
+    value: "0"
+    meaning: 操作成功
+  ESP_FAIL:
+    value: "-1"
+    meaning: 通用错误
+  ESP_ERR_NO_MEM:
+    value: "0x101"
+    meaning: 内存不足
+    common_causes:
+      - "heap_caps_malloc 未找到指定能力的内存"
+      - "PSRAM 未启用"
+      - "FreeRTOS 任务栈过小"
+  ESP_ERR_INVALID_ARG:
+    value: "0x102"
+    meaning: 无效参数
+  ESP_ERR_INVALID_STATE:
+    value: "0x103"
+    meaning: 状态错误（如 WiFi 未初始化就调用连接）
+    solution: 检查初始化顺序
+  ESP_ERR_INVALID_SIZE:
+    value: "0x104"
+    meaning: 数据大小超限
+  ESP_ERR_NOT_FOUND:
+    value: "0x105"
+    meaning: 请求资源未找到
+  ESP_ERR_NOT_SUPPORTED:
+    value: "0x106"
+    meaning: 功能不支持
+  ESP_ERR_TIMEOUT:
+    value: "0x107"
+    meaning: 操作超时
+    common_causes:
+      - "I2C 从设备无响应"
+      - "信号量等待超时"
+      - "WiFi 连接超时"
+  ESP_ERR_INVALID_RESPONSE:
+    value: "0x108"
+    meaning: 收到无效响应
+  ESP_ERR_WIFI_BASE:
+    meaning: WiFi 子模块错误基础值，具体错误需查 esp_wifi_types.h
+  ESP_ERR_NVS_BASE:
+    meaning: NVS 存储错误基础值，具体错误需查 nvs.h
+  GuruMeditationError:
+    meaning: 内核 panic
+    common_causes:
+      - "访问 NULL 指针"
+      - "除以零"
+      - "栈溢出（检查任务栈大小）"
+      - "中断中调用非 ISR 安全的 API"
+      - "LoadProhibited / StoreProhibited（访问无效内存区域）"
+      - "看门狗触发（Task WDT / Interrupt WDT）"

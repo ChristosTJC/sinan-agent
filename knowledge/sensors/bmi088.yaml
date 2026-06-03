@@ -1,0 +1,30 @@
+name: BMI088
+kind: IMU (6-axis 高性能)
+manufacturer: Bosch Sensortec
+protocol: SPI (推荐) or I2C
+i2c_addr: "Accel: 0x18 (SDI=GND) / 0x19 (SDI=VCC), Gyro: 0x68 (SDI=GND) / 0x69 (SDI=VCC)"
+measurements:
+  - 3-axis accelerometer (±3/6/12/24 g)
+  - 3-axis gyroscope (±125/250/500/1000/2000 °/s)
+key_registers:
+  ACC_CHIP_ID: "0x00 (should return 0x1E)"
+  ACC_PWR_CTRL: "0x7D (bit 2: temp_en, bits 1-0: acc_en[00=suspend 11=active])"
+  ACC_PWR_CONF: "0x7C (power mode config)"
+  ACC_CONF: "0x40 (bits 6-4: acc_bwp, bits 3-0: acc_odr)"
+  ACC_RANGE: "0x41 (bits 1-0: select ±3/6/12/24g)"
+  ACC_DATA: "0x12 (start of 6 data registers, XYZ each 16-bit LSB first)"
+  GYRO_CHIP_ID: "0x00 (should return 0x0F, note: gyro is separate device)"
+  GYRO_RANGE: "0x0F (bits 2-0: select ±125/250/500/1000/2000 °/s)"
+  GYRO_BANDWIDTH: "0x10 (bits 3-0: bandwidth/ODR)"
+  GYRO_LPM1: "0x11 (bit 5: drdy_irq, bits 3-0: low power mode config)"
+  GYRO_DATA: "0x02 (start of 6 data registers, XYZ each 16-bit LSB first)"
+  ACC_INT1_IO_CTRL: "0x53 (accelerometer INT1 pin config)"
+  GYRO_INT_CTRL: "0x15 (gyroscope interrupt control)"
+common_pitfalls:
+  - "加速度计和陀螺仪是两颗独立芯片，挂在不同 I2C 地址上，需分别初始化"
+  - "加速度计上电默认处于 suspend 模式，必须写 ACC_PWR_CTRL 置位 acc_en=0b11 才能开始采集"
+  - "陀螺仪上电默认 normal mode，但需等待启动时间约 30ms 后数据才有效"
+  - "加速度计和陀螺仪各自有独立的 INT1/INT2 中断引脚，引脚映射和使能需分别配置"
+  - "加速度计量程超过 8g 时高 g 冲击可能导致输出 clip"
+  - "SPI 模式下加速度计和陀螺仪共用 SCLK/MOSI/MISO，用独立 CS 片选信号区分"
+  - "RoboMaster 中常用于云台 IMU，需关注振动抑制和低通滤波配置"

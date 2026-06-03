@@ -12,6 +12,7 @@
 """
 
 import logging
+import os
 import re
 import shutil
 import subprocess
@@ -240,11 +241,17 @@ def _flash_platformio(project_path: Path, port: str) -> dict:
     }
 
 
-def _flash_esptool(project_path: Path, port: str) -> dict:
+def _flash_esptool(project_path: Path, port: str, chip: str = "") -> dict:
     """通过 esptool.py 烧写 ESP32/ESP8266。
 
     优先查找 ``.pio/build/`` 目录下的 firmware.bin，
     以及 ``build/``、``.pio/`` 下的固件文件。
+    自动检测 bootloader.bin 和 partition-table.bin 并一同烧录。
+
+    Args:
+        project_path: 项目根目录。
+        port: 串口设备路径。
+        chip: 目标芯片型号（如 ``esp32s3``），为空时自动从环境变量 ESP_CHIP 或项目配置推断。
     """
     esptool = shutil.which("esptool.py") or shutil.which("esptool")
     if not esptool:
@@ -254,33 +261,49 @@ def _flash_esptool(project_path: Path, port: str) -> dict:
             "errors": ["esptool.py 未安装。请执行: pip install esptool"],
         }
 
+    # 芯片型号检测
+    if not chip:
+        chip = os.environ.get("ESP_CHIP", "")
+    if not chip:
+        chip = _detect_esp_chip(project_path)
+
     # 查找固件文件
     firmware_path: Optional[Path] = None
+    bootloader_path: Optional[Path] = None
+    partition_path: Optional[Path] = None
     search_dirs = [
         project_path / ".pio" / "build",
         project_path / "build",
         project_path / ".pio",
     ]
-    search_patterns = ["firmware.bin", "*.bin", "*.elf"]
 
     for search_dir in search_dirs:
         if search_dir.is_dir():
-            for pattern in search_patterns:
-                matches = list(search_dir.rglob(pattern))
-                if matches:
-                    # 优先选 firmware.bin
-                    for m in matches:
-                        if m.name == "firmware.bin":
-                            firmware_path = m
-                            break
-                    if firmware_path is None:
-                        firmware_path = matches[0]
-                    break
+            for p in search_dir.rglob("firmware.bin"):
+                firmware_path = p
+                break
+            for p in search_dir.rglob("bootloader.bin"):
+                bootloader_path = p
+                break
+            for p in search_dir.rglob("partition-table.bin"):
+                partition_path = p
+                break
+            # 也搜索子目录下的 patterns
+            if firmware_path is None:
+                for pattern in ["*.bin", "*.elf"]:
+                    matches = list(search_dir.rglob(pattern))
+                    if matches:
+                        for m in matches:
+                            if m.name == "firmware.bin":
+                                firmware_path = m
+                                break
+                        if firmware_path is None:
+                            firmware_path = matches[0]
+                        break
         if firmware_path is not None:
             break
 
     if firmware_path is None:
-        # 宽搜索整个项目目录
         all_bins = list(project_path.rglob("firmware.bin"))
         if all_bins:
             firmware_path = all_bins[0]
@@ -296,15 +319,22 @@ def _flash_esptool(project_path: Path, port: str) -> dict:
             "errors": [f"未找到固件文件（.bin）。已搜索: {project_path}"],
         }
 
-    logger.info("烧写固件: %s → %s", firmware_path.name, port)
+    logger.info("烧写固件: %s → %s (chip=%s)", firmware_path.name, port, chip or "auto")
 
-    cmd = [
-        esptool,
-        "--port", port,
-        "write_flash",
-        "0x0",
-        str(firmware_path),
-    ]
+    cmd = [esptool, "--port", port]
+    if chip:
+        cmd += ["--chip", chip]
+
+    # 构建分区烧录命令
+    cmd.append("write_flash")
+    # 引导加载程序
+    if bootloader_path and bootloader_path.exists():
+        cmd += ["0x1000", str(bootloader_path)]
+    # 分区表
+    if partition_path and partition_path.exists():
+        cmd += ["0x8000", str(partition_path)]
+    # 固件
+    cmd += ["0x10000", str(firmware_path)]
 
     try:
         result = _run_command(cmd, project_path)
@@ -316,6 +346,38 @@ def _flash_esptool(project_path: Path, port: str) -> dict:
         "output": result.stdout,
         "errors": [result.stderr.strip()] if result.stderr.strip() and result.returncode != 0 else [],
     }
+
+
+def _detect_esp_chip(project_path: Path) -> str:
+    """从项目配置中推断 ESP32 芯片型号。"""
+    # PlatformIO 配置
+    pio_ini = project_path / "platformio.ini"
+    if pio_ini.is_file():
+        content = pio_ini.read_text(errors="replace")
+        for line in content.splitlines():
+            line = line.strip()
+            if "board =" in line.lower():
+                board = line.split("=", 1)[1].strip()
+                chip_map = {
+                    "esp32s3": "esp32s3", "esp32-s3": "esp32s3",
+                    "esp32c3": "esp32c3", "esp32-c3": "esp32c3",
+                    "esp32s2": "esp32s2", "esp32-s2": "esp32s2",
+                    "esp32c6": "esp32c6", "esp32-c6": "esp32c6",
+                    "esp32h2": "esp32h2", "esp32-h2": "esp32h2",
+                }
+                for key, val in chip_map.items():
+                    if key in board.lower():
+                        return val
+
+    # ESP-IDF sdkconfig
+    sdkconfig = project_path / "sdkconfig"
+    if sdkconfig.is_file():
+        content = sdkconfig.read_text(errors="replace")
+        for line in content.splitlines():
+            if "CONFIG_IDF_TARGET=" in line:
+                return line.split("=", 1)[1].strip().strip('"')
+
+    return ""
 
 
 def _flash_stm32cubeprog(project_path: Path, port: str) -> dict:
@@ -521,8 +583,14 @@ def _flash_jlink(project_path: Path, port: str) -> dict:
     }
 
 
-def _flash_arduino(project_path: Path, port: str) -> dict:
-    """通过 arduino-cli 上传烧写。"""
+def _flash_arduino(project_path: Path, port: str, fqbn: str = "") -> dict:
+    """通过 arduino-cli 上传烧写。
+
+    Args:
+        project_path: 项目根目录。
+        port: 串口设备路径。
+        fqbn: 全限定板名，为空时自动检测。
+    """
     if not shutil.which("arduino-cli"):
         return {
             "success": False,
@@ -530,10 +598,14 @@ def _flash_arduino(project_path: Path, port: str) -> dict:
             "errors": ["arduino-cli 未安装。请参见: https://arduino.github.io/arduino-cli/"],
         }
 
+    if not fqbn:
+        from agent.tools.firmware_builder import _detect_arduino_fqbn
+        fqbn = _detect_arduino_fqbn(project_path)
+
     cmd = [
         "arduino-cli", "upload",
         "-p", port,
-        "--fqbn", "arduino:avr:uno",
+        "--fqbn", fqbn,
         str(project_path),
     ]
 
@@ -547,6 +619,88 @@ def _flash_arduino(project_path: Path, port: str) -> dict:
         "output": result.stdout,
         "errors": [result.stderr.strip()] if result.stderr.strip() and result.returncode != 0 else [],
     }
+
+
+def _flash_esp_idf(project_path: Path, port: str, chip: str = "") -> dict:
+    """Flash an ESP-IDF project with idf.py."""
+    if not shutil.which("idf.py"):
+        return {
+            "success": False,
+            "output": "",
+            "errors": ["ESP-IDF idf.py 未安装或未进入 ESP-IDF 环境"],
+        }
+
+    from agent.platforms.esp32 import ESP32Platform
+
+    target = ESP32Platform().idf_target(chip or _detect_esp_chip(project_path) or "esp32")
+    cmd = ["idf.py", "-p", port, f"-DIDF_TARGET={target}", "flash"]
+
+    try:
+        result = _run_command(cmd, project_path)
+    except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
+        return {"success": False, "output": "", "errors": [str(exc)]}
+
+    return {
+        "success": result.returncode == 0,
+        "output": result.stdout,
+        "errors": [result.stderr.strip()] if result.stderr.strip() and result.returncode != 0 else [],
+    }
+
+
+def _is_zephyr_project(project_path: Path) -> bool:
+    cmake_lists = project_path / "CMakeLists.txt"
+    if not cmake_lists.is_file():
+        return False
+    content = cmake_lists.read_text(errors="replace")
+    return "Zephyr" in content or "ZEPHYR_BASE" in content
+
+
+def _flash_west(project_path: Path) -> dict:
+    """Flash a Zephyr/NCS build with west."""
+    if not shutil.which("west"):
+        return {"success": False, "output": "", "errors": ["west 未安装或未进入 Zephyr/nRF Connect SDK 环境"]}
+
+    cmd = ["west", "flash", "--build-dir", str(project_path / "build")]
+    try:
+        result = _run_command(cmd, project_path)
+    except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
+        return {"success": False, "output": "", "errors": [str(exc)]}
+
+    return {
+        "success": result.returncode == 0,
+        "output": result.stdout,
+        "errors": [result.stderr.strip()] if result.stderr.strip() and result.returncode != 0 else [],
+    }
+
+
+def _find_nordic_firmware(project_path: Path) -> Optional[Path]:
+    candidates = [
+        project_path / "build" / "zephyr" / "zephyr.hex",
+        project_path / "build" / "zephyr.hex",
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    matches = list(project_path.rglob("*.hex"))
+    return matches[0] if matches else None
+
+
+def _flash_nrfjprog(project_path: Path, chip: str = "") -> dict:
+    """Flash a Nordic firmware image using nrfjprog."""
+    if not shutil.which("nrfjprog"):
+        return {"success": False, "output": "", "errors": ["nrfjprog 未安装或不在 PATH 中"]}
+
+    firmware_path = _find_nordic_firmware(project_path)
+    if firmware_path is None:
+        return {"success": False, "output": "", "errors": [f"未找到 Nordic 固件文件（.hex）。已搜索: {project_path}"]}
+
+    from agent.tools.nrfjprog_flasher import flash_with_nrfjprog
+
+    result = flash_with_nrfjprog(str(firmware_path), chip or "nRF52840", check_available=False)
+    if "error" in result and "errors" not in result:
+        result["errors"] = [result["error"]]
+    result.setdefault("output", "")
+    return result
 
 
 _FLASHERS = {
@@ -563,6 +717,8 @@ def flash_firmware(
     project_path: str,
     port: str,
     method: str = "auto",
+    platform: Optional[str] = None,
+    chip: Optional[str] = None,
 ) -> dict:
     """烧写固件到目标设备。
 
@@ -572,6 +728,8 @@ def flash_firmware(
         method: 烧写方法。``"auto"`` 自动检测，或显式指定:
                 ``"platformio"`` / ``"esptool"`` / ``"stm32cubeprog"`` /
                 ``"openocd"`` / ``"jlink"`` / ``"arduino"``。
+        platform: 可选平台名，用于平台感知烧录路径。
+        chip: 可选芯片型号，用于平台感知烧录参数。
 
     Returns:
         烧写结果 dict::
@@ -583,6 +741,16 @@ def flash_firmware(
             }
     """
     root = Path(project_path).resolve()
+    platform_name = (platform or "").lower()
+
+    if platform_name in ("esp32", "esp", "espressif") and method in ("auto", "esp-idf", "idf"):
+        return _flash_esp_idf(root, port, chip=chip or "")
+    if platform_name in ("nordic", "nrf") and method in ("west", "west-flash"):
+        return _flash_west(root)
+    if platform_name in ("nordic", "nrf") and method == "nrfjprog":
+        return _flash_nrfjprog(root, chip=chip or "")
+    if platform_name in ("nordic", "nrf") and method == "auto" and _is_zephyr_project(root):
+        return _flash_west(root)
 
     if method == "auto":
         method = detect_flash_method(str(root))
@@ -599,7 +767,10 @@ def flash_firmware(
     flasher = _FLASHERS[method]
     logger.info("开始烧写固件: method=%s, port=%s, project=%s", method, port, root)
 
-    result = flasher(root, port)
+    if method == "esptool":
+        result = _flash_esptool(root, port, chip=chip or "")
+    else:
+        result = flasher(root, port)
 
     if result["success"]:
         logger.info("烧写成功: %s", port)

@@ -15,6 +15,8 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from agent.tools.path_rules import validate_search_root
+
 
 # ── Grep ──────────────────────────────────────────────────────────────────
 
@@ -48,7 +50,24 @@ def grep(
     Returns:
         dict，包含 matches/files/truncated/error。
     """
+    # ToolRegistry.call_tool() 传入完整 arguments dict
+    if isinstance(pattern, dict):
+        args = pattern
+        pattern = args.get("pattern", "")
+        path = args.get("path", path)
+        glob = args.get("glob", glob)
+        output_mode = args.get("output_mode", output_mode)
+        head_limit = args.get("head_limit", head_limit)
+        offset = args.get("offset", offset)
+        ignore_case = args.get("ignore_case", ignore_case)
+        context_lines = args.get("context_lines", context_lines)
+
     search_path = Path(os.path.expanduser(path)) if path else Path.cwd()
+
+    allowed, reason = validate_search_root(str(search_path))
+    if not allowed:
+        return {"ok": False, "error": reason}
+
     if not search_path.exists():
         return {"ok": False, "error": f"目录不存在: {search_path}"}
 
@@ -277,7 +296,18 @@ def glob(pattern: str, path: str | None = None) -> dict[str, Any]:
     Returns:
         dict，包含 filenames/count/truncated。
     """
+    # ToolRegistry.call_tool() 传入完整 arguments dict
+    if isinstance(pattern, dict):
+        args = pattern
+        pattern = args.get("pattern", "")
+        path = args.get("path", path)
+
     search_path = Path(os.path.expanduser(path)) if path else Path.cwd()
+
+    allowed, reason = validate_search_root(str(search_path))
+    if not allowed:
+        return {"ok": False, "error": reason}
+
     if not search_path.exists():
         return {"ok": False, "error": f"目录不存在: {search_path}"}
 

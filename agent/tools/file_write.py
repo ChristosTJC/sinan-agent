@@ -13,6 +13,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+from agent.tools.path_rules import validate_path
+
 
 def write_file(
     file_path: str,
@@ -27,6 +29,16 @@ def write_file(
     Returns:
         dict，包含 success/file_path/bytes_written。
     """
+    # ToolRegistry.call_tool() 传入完整 arguments dict
+    if isinstance(file_path, dict):
+        args = file_path
+        file_path = args.get("file_path", "")
+        content = args.get("content", content)
+
+    allowed, reason = validate_path(file_path, mode="write")
+    if not allowed:
+        return {"success": False, "error": reason, "file_path": file_path}
+
     path = Path(os.path.expanduser(file_path))
     if not path.is_absolute():
         return {"success": False, "error": "必须提供绝对路径", "file_path": file_path}

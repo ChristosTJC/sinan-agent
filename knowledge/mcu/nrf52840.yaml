@@ -1,0 +1,36 @@
+name: nRF52840
+manufacturer: Nordic Semiconductor
+arch: ARM Cortex-M4F
+max_clock: 64MHz
+flash: 1MB
+ram: 256KB
+voltage: 1.7V-3.6V
+package: aQFN73 (7x7mm)
+key_features:
+  - Bluetooth 5.4 LE (2Mbps, Long Range, Advertising Extensions)
+  - 802.15.4 (Thread/Zigbee/Matter)
+  - NFC-A 标签 (Type 2/4, 与 GPIO9/10 复用)
+  - USB 2.0 Full Speed Device
+  - ARM CryptoCell-310 (硬件 AES/HASH/RNG/ECC)
+  - PPI (可编程外设互连): 32 通道, 无需 CPU 干预即可触发外设
+  - QSPI 接口 (支持 XIP 直接执行)
+  - 8x 12-bit ADC (单端/差分), 最高 200ksps
+  - 5x SPI/TWI/UART (EasyDMA 支持)
+  - 4x PWM (12 通道), 4x 定时器
+  - NFC 标签唤醒 (NFC field detect)
+clock_tree:
+  HFCLK: 64MHz (外部 32MHz 晶振 或 内部 64MHz RC)
+  LFCLK: 32.768kHz (外部晶振 / 内部 RC / 从 HFCLK 分频合成)
+  HFCLK192M: 192MHz (内部高速 RC, 供无线电和定时器)
+common_pitfalls:
+  - "外设寄存器必须先通过 nrfx 驱动或直接写 TASKS/ENABLE 寄存器使能时钟后才能访问"
+  - "GPIO 上电默认输入且无内部上下拉，必须显式配置 pin_cnf 寄存器设置方向/驱动/上下拉"
+  - "PPI channel 有限 (32 个)，若同时用多个自动触发链路需提前分配 channel 或使用 fork"
+  - "QSPI 进入 XIP 读模式后，QSPI 外设自身不可再配置；退出 XIP 需要复位 QSPI 外设"
+  - "LDO vs DC/DC 供电：DC/DC 省电 (效率约 85%) 但需要外部 LC 电路 (10uH+10uF)"
+  - "NFC 天线使用 GPIO9/10 (差分管脚)，启用 NFC 时这两个引脚不能用作普通 GPIO"
+  - "RADIO 协议栈 (SoftDevice) 会占用一部分 Flash 和 RAM，裸机可用资源需减去协议栈占用"
+programming_interfaces:
+  - SWD (via J-Link, DAPLink, or Black Magic Probe)
+  - nRF52 DFU (USB/UART/BLE OTA)
+  - nrfjprog CLI (Nordic 官方烧录工具)

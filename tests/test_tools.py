@@ -168,6 +168,55 @@ class TestToolRegistry:
         assert result["success"] is False
         assert "boom" in result["error"]
 
+    def test_discovered_scan_tools_accept_registry_arguments(self, monkeypatch):
+        from agent.tools import serial_scanner
+
+        monkeypatch.setattr(serial_scanner, "scan_usb_devices", lambda: [{"vid": "1234", "pid": "abcd"}])
+        monkeypatch.setattr(serial_scanner, "scan_serial_ports", lambda: [{"port": "/dev/ttyUSB0"}])
+
+        reg = ToolRegistry()
+        reg.discover()
+
+        usb = reg.call_tool("scan_usb", {})
+        serial = reg.call_tool("scan_serial", {})
+
+        assert usb["success"] is True
+        assert usb["result"] == [{"vid": "1234", "pid": "abcd"}]
+        assert serial["success"] is True
+        assert serial["result"] == [{"port": "/dev/ttyUSB0"}]
+
+    def test_serial_monitor_can_return_diagnostic_when_requested(self, monkeypatch):
+        from agent.tools import serial_monitor
+
+        class FakeMonitor:
+            def __init__(self, port: str, baudrate: int):
+                self.port = port
+                self.baudrate = baudrate
+
+            def open(self):
+                return True
+
+            def monitor(self, duration_sec: float):
+                return ["Guru Meditation Error: Core  0 panic'ed (StoreProhibited)."]
+
+            def close(self):
+                return None
+
+        monkeypatch.setattr(serial_monitor, "SerialMonitor", FakeMonitor)
+
+        reg = ToolRegistry()
+        reg.discover()
+
+        result = reg.call_tool("serial_monitor", {
+            "port": "/dev/ttyUSB0",
+            "diagnose": True,
+            "platform": "esp32",
+        })
+
+        assert result["success"] is True
+        assert result["diagnostic"]["platform"] == "esp32"
+        assert result["diagnostic"]["diagnostic"]["panic"]["reason"] == "StoreProhibited"
+
     def test_schema_includes_required(self):
         reg = ToolRegistry()
 
@@ -182,3 +231,58 @@ class TestToolRegistry:
         schema = reg.list_tools()[0]["parameters"]
         assert "port" in schema["required"]
         assert "baud" not in schema["required"]
+
+    def test_discover_registers_nrfjprog_flash_tool(self):
+        from agent.tools import DangerLevel
+
+        reg = ToolRegistry()
+        reg.discover()
+
+        tool_names = {tool["name"] for tool in reg.list_tools()}
+
+        assert "nrfjprog_flash" in tool_names
+        assert reg.get_danger_level("nrfjprog_flash") == DangerLevel.HIGH
+
+    def test_discover_registers_esp32_diagnose_log_tool(self):
+        from agent.tools import DangerLevel
+
+        reg = ToolRegistry()
+        reg.discover()
+
+        tool_names = {tool["name"] for tool in reg.list_tools()}
+
+        assert "esp32_diagnose_log" in tool_names
+        assert reg.get_danger_level("esp32_diagnose_log") == DangerLevel.SAFE
+
+    def test_discover_registers_stm32_diagnose_log_tool(self):
+        from agent.tools import DangerLevel
+
+        reg = ToolRegistry()
+        reg.discover()
+
+        tool_names = {tool["name"] for tool in reg.list_tools()}
+
+        assert "stm32_diagnose_log" in tool_names
+        assert reg.get_danger_level("stm32_diagnose_log") == DangerLevel.SAFE
+
+    def test_discover_registers_nordic_diagnose_log_tool(self):
+        from agent.tools import DangerLevel
+
+        reg = ToolRegistry()
+        reg.discover()
+
+        tool_names = {tool["name"] for tool in reg.list_tools()}
+
+        assert "nordic_diagnose_log" in tool_names
+        assert reg.get_danger_level("nordic_diagnose_log") == DangerLevel.SAFE
+
+    def test_discover_registers_generic_diagnose_log_tool(self):
+        from agent.tools import DangerLevel
+
+        reg = ToolRegistry()
+        reg.discover()
+
+        tool_names = {tool["name"] for tool in reg.list_tools()}
+
+        assert "diagnose_log" in tool_names
+        assert reg.get_danger_level("diagnose_log") == DangerLevel.SAFE

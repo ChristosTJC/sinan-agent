@@ -1,0 +1,25 @@
+name: BME280
+kind: 环境传感器（温湿压一体）
+manufacturer: Bosch Sensortec
+protocol: I2C or SPI
+i2c_addr: "0x76 (SDO=GND) or 0x77 (SDO=VCC)"
+measurements:
+  - 温度 -40~85°C ±1.0°C
+  - 湿度 0-100%RH ±3%
+  - 气压 300-1100hPa ±1hPa
+key_registers:
+  id: "0xD0 (should return 0x60)"
+  ctrl_hum: "0xF2 (osrs_h, humidity oversampling)"
+  status: "0xF3 (bit 3: measuring, bit 0: im_update)"
+  ctrl_meas: "0xF4 (bits 7-5: osrs_t, bits 4-2: osrs_p, bits 1-0: mode[00=sleep 01/10=forced 11=normal])"
+  config: "0xF5 (bits 7-5: t_sb, bits 4-2: filter, bit 0: spi3w_en)"
+  press_msb: "0xF7 (pressure MSB, followed by LSB 0xF8 and XLSB 0xF9)"
+  temp_msb: "0xFA (temperature MSB, followed by LSB 0xFB and XLSB 0xFC)"
+  hum_msb: "0xFD (humidity MSB, followed by LSB 0xFE)"
+common_pitfalls:
+  - "I2C 地址由 SDO 引脚决定：接地=0x76，接 VCC=0x77"
+  - "读取温湿压数据前必须先从 NVM 读取全部补偿参数（calib00-calib41），否则原始 ADC 值无法转换为物理量"
+  - "补偿算法必须使用 int32_t 逐段运算，直接用浮点会丢失精度导致温漂"
+  - "测量过程中修改 ctrl_meas 会立即中止当前测量周期"
+  - "传感器供电范围 1.71-3.6V，不可直接接入 5V"
+  - "Forced mode 每次测量完成后自动回到 sleep，低功耗场景推荐使用"

@@ -1,0 +1,57 @@
+category: ARM Cortex-M 硬件异常
+errors:
+  HardFault:
+    meaning: 通用硬件错误
+    common_causes:
+      - "非精确总线错误（如访问未映射内存）"
+      - "所有被禁能的其他 fault 升级"
+      - "在 NMI / 其他 HardFault handler 中再次出错"
+  MemManage_Fault:
+    meaning: 内存保护违规（MemFault_Handler）
+    sub_types:
+      IACCVIOL:
+        meaning: 指令访问违规
+      DACCVIOL:
+        meaning: 数据访问违规
+      MUNSTKERR:
+        meaning: 异常返回时出栈错误
+      MSTKERR:
+        meaning: 异常入栈时入口错误
+      MLSPERR:
+        meaning: 浮点 lazy stacking 错误
+  BusFault:
+    meaning: 总线错误（BusFault_Handler）
+    sub_types:
+      IBUSERR:
+        meaning: 指令取指总线错误
+      PRECISERR:
+        meaning: 精确数据总线错误（BFAR 寄存器记录出错地址）
+      IMPRECISERR:
+        meaning: 非精确总线错误（难以定位）
+      UNSTKERR:
+        meaning: 入栈时总线错误
+      STKERR:
+        meaning: 出栈时总线错误
+      LSPERR:
+        meaning: 浮点 lazy stacking 总线错误
+  UsageFault:
+    meaning: 未定义指令或非法操作
+    sub_types:
+      UNDEFINSTR:
+        meaning: 执行未定义指令
+      INVSTATE:
+        meaning: 尝试切换到 ARM 状态（Cortex-M 不支持）
+      INVPC:
+        meaning: 非法的 PC 加载（如从偶数地址加载到 PC）
+      NOCP:
+        meaning: 访问不存在的协处理器
+      UNALIGNED:
+        meaning: 非对齐访问（前提是未使能 UNALIGN_TRP）
+      DIVBYZERO:
+        meaning: 除零
+  DebugApproach:
+    meaning: 通用硬件异常调试方法
+    solution: "在 fault handler 中保存 stacked registers 到全局变量以便调试器检查"
+    common_causes:
+      - "读取 stacked PC（从 PSP/MSP 栈帧中的 PC 位置）"
+      - "CFSR（Configurable Fault Status Register）包含所有三个 fault 的状态字节：UFSR（UsageFault）、BFSR（BusFault）、MMFSR（MemManage Fault）"

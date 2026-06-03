@@ -15,6 +15,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+from agent.tools.path_rules import validate_path
+
 
 def edit_file(
     file_path: str,
@@ -33,6 +35,18 @@ def edit_file(
     Returns:
         dict，包含 success/replacements/error。
     """
+    # ToolRegistry.call_tool() 传入完整 arguments dict
+    if isinstance(file_path, dict):
+        args = file_path
+        file_path = args.get("file_path", "")
+        old_string = args.get("old_string", old_string)
+        new_string = args.get("new_string", new_string)
+        replace_all = args.get("replace_all", replace_all)
+
+    allowed, reason = validate_path(file_path, mode="write")
+    if not allowed:
+        return {"success": False, "error": reason, "file_path": file_path}
+
     path = Path(os.path.expanduser(file_path))
     if not path.is_absolute():
         return {"success": False, "error": "必须提供绝对路径", "file_path": file_path}

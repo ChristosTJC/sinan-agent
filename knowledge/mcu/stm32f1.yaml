@@ -1,0 +1,36 @@
+name: STM32F103C8T6
+manufacturer: STMicroelectronics
+arch: ARM Cortex-M3
+max_clock: 72MHz
+flash: 64KB (C8T6), 128KB (C8T6 high-density)
+ram: 20KB
+voltage: 2.0V-3.6V
+package: LQFP48
+key_features:
+  - Cortex-M3 core (no FPU)
+  - 2x SPI, 2x I2C, 3x USART
+  - 1x CAN 2.0B
+  - 1x USB 2.0 Full Speed
+  - 2x 12-bit ADC (10 channels), 1us conversion
+  - 4x 16-bit timers (with PWM/input capture)
+  - 2x basic timers, 2x watchdog (IWDG/WWDG)
+  - 24MHz max SPI, 400kHz I2C fast mode
+clock_tree:
+  HSI: 8MHz (internal RC)
+  HSE: 4-16MHz (external crystal)
+  PLL: up to 72MHz (from HSI/2 or HSE)
+  APB2: max 72MHz
+  APB1: max 36MHz
+common_pitfalls:
+  - "BOOT0/BOOT1 决定启动模式：BOOT0=0 从 Flash 启动，BOOT0=1+BOOT1=0 从系统存储器启动"
+  - "PA11/PA12 用作 USB 时不可同时用作 GPIO，需配置好复用功能"
+  - "ADC 注入组 (injected group) 可被规则组 (regular group) 触发中途打断"
+  - "IWDG (独立看门狗) 一旦通过键寄存器使能后只能硬件复位关闭，无法软件停止"
+  - "FLASH 等待周期必须与系统时钟匹配：0WS(0-24MHz), 1WS(24-48MHz), 2WS(48-72MHz)"
+  - "APB1 定时器时钟为 APB1x2 (最大 72MHz)，预分频器 >1 时自动倍频"
+  - "VBAT 脚供 RTC 和备份寄存器，掉电需外接纽扣电池 (1.8-3.6V)"
+programming_interfaces:
+  - SWD (Serial Wire Debug)
+  - JTAG
+  - USART1 bootloader (system memory, PA9/PA10)
+  - USB DFU (C8T6 及以上)

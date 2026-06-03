@@ -65,3 +65,19 @@ def test_platform_registry_duplicate():
 
     with pytest.raises(ValueError, match="已注册"):
         registry.register(stm32)
+
+
+def test_detect_platform_matches_nrf_source_headers(tmp_path):
+    """源码包含 nrfx 头文件时应识别已注册的 nRF family。"""
+    (tmp_path / "main.c").write_text('#include <nrfx.h>\nint main(void) { return 0; }\n')
+    registry = PlatformRegistry()
+    nrf = ChipFamily(
+        name="nRF",
+        vendor="Nordic Semiconductor",
+        architecture="ARM Cortex-M",
+        supported_build_systems=["cmake"],
+        supported_flash_tools=["pyocd"],
+    )
+    registry.register(nrf)
+
+    assert registry.detect_platform(str(tmp_path)) == nrf

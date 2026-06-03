@@ -82,6 +82,33 @@ def execute_tool_call(
     return result
 
 
+def _execute_tool_call_with_approval(
+    tool_call: ToolCall,
+    registry: Any,
+    approval_callback: Optional[Callable[[str, dict], bool]] = None,
+) -> dict[str, Any]:
+    """执行工具调用，并把外层审批传递给 registry 的危险门控。"""
+    prev_callback = getattr(registry, "_confirm_callback", None)
+    prev_danger_confirm = getattr(registry, "_danger_confirm", True)
+
+    def _confirm(tool_name: str, _level: str, arguments: dict) -> bool:
+        if approval_callback is None:
+            return False
+        return approval_callback(tool_name, arguments)
+
+    try:
+        if hasattr(registry, "set_confirm_callback"):
+            registry.set_confirm_callback(_confirm)
+        if hasattr(registry, "set_danger_confirm"):
+            registry.set_danger_confirm(True)
+        return execute_tool_call(tool_call, registry)
+    finally:
+        if hasattr(registry, "set_confirm_callback"):
+            registry.set_confirm_callback(prev_callback)
+        if hasattr(registry, "set_danger_confirm"):
+            registry.set_danger_confirm(prev_danger_confirm)
+
+
 def format_tool_result(result: dict[str, Any], tool_name: str = "") -> str:
     """将工具调用结果格式化为字符串供 LLM 阅读。
 
@@ -255,27 +282,15 @@ def execute_all_tool_calls(
 
     # 危险工具：逐个审批 + 串行执行
     for tc in dangerous_calls:
-        approved = True
-        if approval_callback:
-            approved = approval_callback(tc.name, tc.arguments)
-
-        if not approved:
-            if status_callback:
-                status_callback(tc.name, "rejected")
-            result_str = json.dumps({
-                "success": False,
-                "error": f"用户拒绝了危险工具 {tc.name} 的执行",
-            }, ensure_ascii=False, indent=2)
-            messages.append(build_tool_result_message(tc.id, result_str))
-            continue
-
-        # 批准后执行
         if status_callback:
             status_callback(tc.name, "calling")
-        result = execute_tool_call(tc, registry)
+        result = _execute_tool_call_with_approval(tc, registry, approval_callback)
         result_str = format_tool_result(result, tc.name)
         if status_callback:
-            status_callback(tc.name, "done")
+            status_callback(
+                tc.name,
+                "rejected" if not result.get("success") and "拒绝" in result.get("error", "") else "done",
+            )
         messages.append(build_tool_result_message(tc.id, result_str))
 
     # 安全工具：并行执行

@@ -7,13 +7,19 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-SINAN_HOME = Path.home() / ".sinan"
+def get_sinan_home() -> Path:
+    """返回运行时司南数据目录，优先使用 SINAN_HOME 环境变量。"""
+    return Path(os.environ.get("SINAN_HOME", str(Path.home() / ".sinan"))).expanduser()
+
+
+SINAN_HOME = get_sinan_home()
 
 # ── Banner（复用 REPL 主题）──────────────────────────
 def show_banner() -> None:
@@ -22,8 +28,19 @@ def show_banner() -> None:
     print(render_banner())
 
 
+def _cli_confirm(tool_name: str, danger_level: str, arguments: dict) -> bool:
+    """CLI 交互式确认回调 — 危险工具执行前请求用户确认。"""
+    print(f"\n⚠  危险工具: {tool_name} (等级: {danger_level})")
+    if arguments:
+        print(f"   参数: {arguments}")
+    answer = input("   是否执行? [y/N] ").strip().lower()
+    return answer in ("y", "yes")
+
+
 def setup_dirs() -> None:
     """确保司南数据目录存在。"""
+    global SINAN_HOME
+    SINAN_HOME = get_sinan_home()
     dirs = [
         SINAN_HOME / "memories",
         SINAN_HOME / "sessions",
@@ -256,6 +273,155 @@ def cmd_rebuild_index(args: argparse.Namespace) -> int:
         return 1
 
 
+def cmd_build(args: argparse.Namespace) -> int:
+    """执行固件编译。"""
+    from agent.tools import get_registry
+
+    registry = get_registry()
+    registry.set_confirm_callback(None if args.force else _cli_confirm)
+    registry.set_danger_confirm(not args.force)
+
+    result = registry.call_tool("build_firmware", {
+        "project_path": args.project_path,
+        "target": args.target,
+        "env": args.env,
+        "platform": args.platform,
+        "chip": args.chip,
+    })
+    if result.get("success"):
+        print("✓ 编译成功")
+        if result.get("output"):
+            print(result["output"])
+        return 0
+    else:
+        print(f"❌ 编译失败: {result.get('error', '未知错误')}")
+        if result.get("errors"):
+            for e in result["errors"]:
+                print(f"   {e}")
+        return 1
+
+
+def cmd_flash(args: argparse.Namespace) -> int:
+    """执行固件烧录。"""
+    from agent.tools import get_registry
+
+    if not args.port and not (args.chip and args.firmware):
+        print("❌ 缺少参数: --port，或使用 --chip + --firmware 走 pyOCD 烧录")
+        return 1
+
+    registry = get_registry()
+    registry.set_confirm_callback(None if args.force else _cli_confirm)
+    registry.set_danger_confirm(not args.force)
+
+    if args.chip and args.firmware and args.method in ("auto", "pyocd"):
+        result = registry.call_tool("pyocd_flash", {
+            "firmware_path": args.firmware,
+            "chip_model": args.chip,
+        })
+    else:
+        result = registry.call_tool("flash_firmware", {
+            "project_path": args.project_path,
+            "port": args.port,
+            "method": args.method,
+            "platform": args.platform,
+            "chip": args.chip,
+        })
+    if result.get("success"):
+        print("✓ 烧录成功")
+        if result.get("output"):
+            print(result["output"])
+        return 0
+    else:
+        print(f"❌ 烧录失败: {result.get('error', '未知错误')}")
+        if result.get("errors"):
+            for e in result["errors"]:
+                print(f"   {e}")
+        return 1
+
+
+def cmd_demo(args: argparse.Namespace) -> int:
+    """运行无硬件 demo smoke test。"""
+    from agent.diagnostics import collect_demo_status, render_demo
+
+    status = collect_demo_status(SINAN_HOME, Path(args.project_path).resolve())
+    print(render_demo(status), end="")
+    return 0 if status.get("success") else 1
+
+
+def cmd_doctor(args: argparse.Namespace) -> int:
+    """运行环境诊断。"""
+    from agent.diagnostics import collect_doctor_status, render_doctor
+
+    status = collect_doctor_status(
+        SINAN_HOME,
+        Path(args.project_path).resolve(),
+        scan_hardware=args.scan_hardware,
+    )
+    print(render_doctor(status), end="")
+    return 0 if status.get("success") else 1
+
+
+def cmd_report(args: argparse.Namespace) -> int:
+    """生成脱敏诊断报告。"""
+    from agent.diagnostics import collect_doctor_status, default_report_path, write_report
+
+    status = collect_doctor_status(
+        SINAN_HOME,
+        Path(args.project_path).resolve(),
+        scan_hardware=args.scan_hardware,
+    )
+    output = Path(args.output).expanduser() if args.output else default_report_path(SINAN_HOME)
+    path = write_report(status, output)
+    print(f"✓ 诊断报告已写入: {path}")
+    return 0 if status.get("success") else 1
+
+
+def cmd_run(args: argparse.Namespace) -> int:
+    """运行可见的 6 阶段 agent loop。"""
+    from agent.run_loop import SinanRunController, format_run_event
+
+    def _print_event(event: dict) -> None:
+        line = format_run_event(event)
+        if line:
+            print(line)
+
+    llm_client = None
+    if args.llm:
+        from agent.llm.client import create_client
+
+        llm_client = create_client(provider=args.provider, model=args.model)
+
+    controller = SinanRunController(
+        sinan_home=SINAN_HOME,
+        project_path=Path(args.project_path).resolve(),
+        event_callback=_print_event,
+        confirm_dangerous=args.yes,
+        output_dir=Path(args.output_dir).expanduser() if args.output_dir else None,
+        llm_client=llm_client,
+    )
+    result = controller.run(args.goal)
+    return 0 if result.get("success") else 1
+
+
+def cmd_diagnose_log(args: argparse.Namespace) -> int:
+    """分析嵌入式串口/崩溃日志。"""
+    import json
+    from agent.tools.log_diagnostics import diagnose_log
+
+    if args.file:
+        try:
+            log_text = Path(args.file).expanduser().read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            print(f"❌ 读取日志文件失败: {exc}")
+            return 1
+    else:
+        log_text = " ".join(args.log or [])
+
+    result = diagnose_log(log_text, platform=args.platform)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0 if result.get("success") else 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     """构建 CLI 参数解析器。"""
     parser = argparse.ArgumentParser(
@@ -289,6 +455,56 @@ def build_parser() -> argparse.ArgumentParser:
     sess.add_argument("query", nargs="?", help="搜索关键词")
     sess.add_argument("--project", help="项目名称")
 
+    # build
+    build = sub.add_parser("build", help="编译固件")
+    build.add_argument("--project-path", default=".", help="固件项目根目录路径")
+    build.add_argument("--platform", help="目标平台，如 nordic/stm32/esp32")
+    build.add_argument("--chip", help="目标芯片型号，如 nRF52840")
+    build.add_argument("--target", help="编译目标名 (cmake/make)")
+    build.add_argument("--env", help="PlatformIO 环境名")
+    build.add_argument("--force", "-f", action="store_true", help="跳过危险工具确认")
+
+    # flash
+    flash = sub.add_parser("flash", help="烧录固件到设备")
+    flash.add_argument("--project-path", default=".", help="固件项目根目录路径")
+    flash.add_argument("--port", "-p", help="目标串口/调试端口路径")
+    flash.add_argument("--platform", help="目标平台，如 nordic/stm32/esp32")
+    flash.add_argument("--chip", help="目标芯片型号，如 nRF52840")
+    flash.add_argument("--firmware", help="固件文件路径；与 --chip 搭配时使用 pyOCD")
+    flash.add_argument("--method", "-m", default="auto", help="烧写方法 (auto/pyocd/platformio/esptool/stm32cubeprog/openocd/jlink/arduino)")
+    flash.add_argument("--force", "-f", action="store_true", help="跳过危险工具确认")
+
+    # demo
+    demo = sub.add_parser("demo", help="运行无硬件 smoke test")
+    demo.add_argument("--project-path", default=".", help="用于检测构建系统的项目根目录")
+
+    # doctor
+    doctor = sub.add_parser("doctor", help="检查本机司南运行环境")
+    doctor.add_argument("--project-path", default=".", help="用于检测构建系统的项目根目录")
+    doctor.add_argument("--scan-hardware", action="store_true", help="额外执行只读 USB/串口扫描")
+
+    # report
+    report = sub.add_parser("report", help="生成脱敏诊断报告")
+    report.add_argument("--project-path", default=".", help="用于检测构建系统的项目根目录")
+    report.add_argument("--output", "-o", help="报告输出路径，默认写入 SINAN_HOME/reports/")
+    report.add_argument("--scan-hardware", action="store_true", help="额外执行只读 USB/串口扫描")
+
+    # run
+    run = sub.add_parser("run", help="运行可见的 6 阶段 Agent loop")
+    run.add_argument("goal", help="要交给司南执行/分析的目标")
+    run.add_argument("--project-path", default=".", help="目标项目根目录")
+    run.add_argument("--output-dir", help="trace 输出目录；默认写入 SINAN_HOME/runs/<run-id>/")
+    run.add_argument("--yes", action="store_true", help="允许执行 MEDIUM/HIGH 危险工具")
+    run.add_argument("--llm", action="store_true", help="使用已配置的 LLM 生成计划和验证结果")
+    run.add_argument("--provider", help="LLM provider，如 claude/openai/ollama/generic")
+    run.add_argument("--model", help="LLM 模型名称")
+
+    # diagnose-log
+    diagnose = sub.add_parser("diagnose-log", help="分析嵌入式串口/崩溃日志")
+    diagnose.add_argument("log", nargs="*", help="直接传入的日志文本")
+    diagnose.add_argument("--file", "-f", help="日志文件路径")
+    diagnose.add_argument("--platform", help="可选平台名 esp32/stm32/nordic")
+
     # tools
     sub.add_parser("tools", help="列出可用硬件工具")
 
@@ -317,6 +533,20 @@ def main(argv: Optional[list] = None) -> int:
         return cmd_knowledge(args)
     elif args.command == "session":
         return cmd_session(args)
+    elif args.command == "build":
+        return cmd_build(args)
+    elif args.command == "flash":
+        return cmd_flash(args)
+    elif args.command == "demo":
+        return cmd_demo(args)
+    elif args.command == "doctor":
+        return cmd_doctor(args)
+    elif args.command == "report":
+        return cmd_report(args)
+    elif args.command == "run":
+        return cmd_run(args)
+    elif args.command == "diagnose-log":
+        return cmd_diagnose_log(args)
     elif args.command == "tools":
         return cmd_tools(args)
     elif args.command == "rebuild-index":

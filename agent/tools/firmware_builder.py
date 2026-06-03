@@ -80,6 +80,71 @@ def detect_build_system(project_path: str) -> Optional[str]:
     return None
 
 
+def _detect_arduino_fqbn(project_path: Path) -> str:
+    """从项目配置中检测 Arduino 板型 FQBN。
+
+    检测顺序:
+        1. 环境变量 ``ARDUINO_FQBN``
+        2. ``platformio.ini`` 中的 ``board`` 字段映射
+        3. ``arduino-cli board list`` 已连接设备
+        4. 默认 ``arduino:avr:uno``
+
+    Returns:
+        FQBN 字符串，如 ``arduino:avr:uno`` 或 ``esp32:esp32:esp32``。
+    """
+    # 环境变量
+    env_fqbn = os.environ.get("ARDUINO_FQBN", "")
+    if env_fqbn:
+        return env_fqbn
+
+    # PlatformIO board → Arduino FQBN 映射
+    pio_to_fqbn = {
+        "uno": "arduino:avr:uno",
+        "mega": "arduino:avr:mega:cpu=atmega2560",
+        "mega2560": "arduino:avr:mega:cpu=atmega2560",
+        "nano": "arduino:avr:nano",
+        "nano328": "arduino:avr:nano",
+        "due": "arduino:sam:arduino_due_x",
+        "leonardo": "arduino:avr:leonardo",
+        "micro": "arduino:avr:micro",
+        "esp32": "esp32:esp32:esp32",
+        "esp32s3": "esp32:esp32:esp32s3",
+        "esp32c3": "esp32:esp32:esp32c3",
+        "esp32s2": "esp32:esp32:esp32s2",
+        "esp8266": "esp8266:esp8266:nodemcuv2",
+        "teensy40": "teensy:avr:teensy40",
+        "teensy41": "teensy:avr:teensy41",
+    }
+
+    pio_ini = project_path / "platformio.ini"
+    if pio_ini.is_file():
+        content = pio_ini.read_text(errors="replace")
+        for line in content.splitlines():
+            line = line.strip()
+            if "board =" in line.lower():
+                board = line.split("=", 1)[1].strip()
+                for key, val in pio_to_fqbn.items():
+                    if key in board.lower():
+                        return val
+
+    # arduino-cli board list（需已连接设备）
+    try:
+        result = subprocess.run(
+            ["arduino-cli", "board", "list", "--format", "json"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if result.returncode == 0:
+            import json
+            data = json.loads(result.stdout)
+            for board in data.get("boards", []):
+                if board.get("fqbn"):
+                    return board["fqbn"]
+    except Exception:
+        pass
+
+    return "arduino:avr:uno"
+
+
 # ---------------------------------------------------------------------------
 # 编译
 # ---------------------------------------------------------------------------
@@ -157,7 +222,12 @@ def _build_platformio(project_path: Path, env: Optional[str] = None) -> dict:
     }
 
 
-def _build_cmake(project_path: Path, target: Optional[str] = None) -> dict:
+def _build_cmake(
+    project_path: Path,
+    target: Optional[str] = None,
+    definitions: Optional[dict[str, str]] = None,
+    force: bool = False,
+) -> dict:
     """CMake 构建。
 
     优先查找 ``build/`` 目录，若不存在则尝试创建。
@@ -165,6 +235,8 @@ def _build_cmake(project_path: Path, target: Optional[str] = None) -> dict:
     Args:
         project_path: 项目路径。
         target: 可选的目标名。
+        definitions: 可选的 CMake -D 定义。
+        force: 是否强制重新构建（等价于 ``cmake --build ... --clean-first``）。
 
     Returns:
         ``{success, output, errors, warnings}``。
@@ -182,7 +254,11 @@ def _build_cmake(project_path: Path, target: Optional[str] = None) -> dict:
         # 尝试自动配置
         logger.info("build/ 目录不存在，尝试 cmake -B build")
         try:
-            result = _run_command(["cmake", "-B", "build", "-S", "."], project_path)
+            configure_cmd = ["cmake", "-B", "build", "-S", "."]
+            if definitions:
+                for key, value in definitions.items():
+                    configure_cmd.append(f"-D{key}={value}")
+            result = _run_command(configure_cmd, project_path)
             if result.returncode != 0:
                 return {
                     "success": False,
@@ -199,6 +275,8 @@ def _build_cmake(project_path: Path, target: Optional[str] = None) -> dict:
             }
 
     cmd = ["cmake", "--build", str(build_dir)]
+    if force:
+        cmd.append("--clean-first")
     if target:
         cmd.extend(["--target", target])
 
@@ -224,12 +302,13 @@ def _build_cmake(project_path: Path, target: Optional[str] = None) -> dict:
     }
 
 
-def _build_make(project_path: Path, target: Optional[str] = None) -> dict:
+def _build_make(project_path: Path, target: Optional[str] = None, force: bool = False) -> dict:
     """Make 构建。
 
     Args:
         project_path: 项目路径。
         target: 可选的目标名。
+        force: 是否强制重新构建（传递 ``-B`` 标志）。
 
     Returns:
         ``{success, output, errors, warnings}``。
@@ -268,12 +347,13 @@ def _build_make(project_path: Path, target: Optional[str] = None) -> dict:
     }
 
 
-def _build_arduino(project_path: Path, _target: Optional[str] = None) -> dict:
+def _build_arduino(project_path: Path, target: Optional[str] = None, fqbn: str = "") -> dict:
     """Arduino CLI 编译。
 
     Args:
         project_path: 项目路径（含 .ino 文件）。
-        _target: 未使用（保持接口一致）。
+        target: 未使用（保持接口一致）。
+        fqbn: 全限定板名（如 ``esp32:esp32:esp32``），为空时自动检测。
 
     Returns:
         ``{success, output, errors, warnings}``。
@@ -286,6 +366,9 @@ def _build_arduino(project_path: Path, _target: Optional[str] = None) -> dict:
             "warnings": [],
         }
 
+    if not fqbn:
+        fqbn = _detect_arduino_fqbn(project_path)
+
     # 找到 .ino 文件
     ino_files = list(project_path.glob("*.ino"))
     if not ino_files:
@@ -296,7 +379,7 @@ def _build_arduino(project_path: Path, _target: Optional[str] = None) -> dict:
             "warnings": [],
         }
 
-    cmd = ["arduino-cli", "compile", "--fqbn", "arduino:avr:uno", str(project_path)]
+    cmd = ["arduino-cli", "compile", "--fqbn", fqbn, str(project_path)]
 
     try:
         result = _run_command(cmd, project_path)
@@ -320,6 +403,130 @@ def _build_arduino(project_path: Path, _target: Optional[str] = None) -> dict:
     }
 
 
+def _detect_esp_idf_target(project_path: Path) -> str:
+    """Infer ESP-IDF target from sdkconfig or PlatformIO board metadata."""
+    sdkconfig = project_path / "sdkconfig"
+    if sdkconfig.is_file():
+        content = sdkconfig.read_text(errors="replace")
+        for line in content.splitlines():
+            if "CONFIG_IDF_TARGET=" in line:
+                return line.split("=", 1)[1].strip().strip('"')
+
+    pio_ini = project_path / "platformio.ini"
+    if pio_ini.is_file():
+        content = pio_ini.read_text(errors="replace")
+        chip_map = {
+            "esp32s3": "esp32s3",
+            "esp32-s3": "esp32s3",
+            "esp32c3": "esp32c3",
+            "esp32-c3": "esp32c3",
+            "esp32s2": "esp32s2",
+            "esp32-s2": "esp32s2",
+        }
+        for line in content.splitlines():
+            if "board =" not in line.lower():
+                continue
+            board = line.split("=", 1)[1].strip().lower()
+            for key, target in chip_map.items():
+                if key in board:
+                    return target
+
+    return "esp32"
+
+
+def _build_esp_idf(project_path: Path, chip: Optional[str] = None) -> dict:
+    """ESP-IDF build via idf.py."""
+    if not shutil.which("idf.py"):
+        return {
+            "success": False,
+            "output": "",
+            "errors": ["ESP-IDF idf.py 未安装或未进入 ESP-IDF 环境"],
+            "warnings": [],
+        }
+
+    from agent.platforms.esp32 import ESP32Platform
+
+    target = ESP32Platform().idf_target(chip or _detect_esp_idf_target(project_path))
+    output_parts: list[str] = []
+
+    try:
+        set_target = _run_command(["idf.py", "set-target", target], project_path)
+        output_parts.append(set_target.stdout)
+        if set_target.returncode != 0:
+            return {
+                "success": False,
+                "output": "\n".join(output_parts),
+                "errors": [set_target.stderr.strip()] if set_target.stderr.strip() else [],
+                "warnings": [],
+            }
+
+        build = _run_command(["idf.py", "build"], project_path)
+    except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
+        return {
+            "success": False,
+            "output": "\n".join(output_parts),
+            "errors": [str(exc)],
+            "warnings": [],
+        }
+
+    output_parts.append(build.stdout)
+    parsed = parse_errors(build.stdout + "\n" + build.stderr)
+    errors = [e for e in parsed if e["level"] == "error"]
+    warnings_list = [w for w in parsed if w["level"] == "warning"]
+
+    return {
+        "success": build.returncode == 0,
+        "output": "\n".join(output_parts),
+        "errors": errors if errors else [build.stderr.strip()] if build.stderr.strip() and build.returncode != 0 else [],
+        "warnings": warnings_list,
+    }
+
+
+def _is_zephyr_project(project_path: Path) -> bool:
+    cmake_lists = project_path / "CMakeLists.txt"
+    if not cmake_lists.is_file():
+        return False
+    content = cmake_lists.read_text(errors="replace")
+    return "Zephyr" in content or "ZEPHYR_BASE" in content
+
+
+def _build_west(project_path: Path, chip: Optional[str] = None) -> dict:
+    """Zephyr/NCS build via west."""
+    if not shutil.which("west"):
+        return {
+            "success": False,
+            "output": "",
+            "errors": ["west 未安装或未进入 Zephyr/nRF Connect SDK 环境"],
+            "warnings": [],
+        }
+
+    from agent.platforms.nordic import NordicPlatform
+
+    board = NordicPlatform()._variant_to_board(chip or "nRF52840")
+    cmd = ["west", "build", "-b", board, str(project_path)]
+
+    try:
+        result = _run_command(cmd, project_path)
+    except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
+        return {
+            "success": False,
+            "output": "",
+            "errors": [str(exc)],
+            "warnings": [],
+        }
+
+    parsed = parse_errors(result.stdout + "\n" + result.stderr)
+    errors = [e for e in parsed if e["level"] == "error"]
+    warnings_list = [w for w in parsed if w["level"] == "warning"]
+
+    return {
+        "success": result.returncode == 0,
+        "output": result.stdout,
+        "errors": errors if errors else [result.stderr.strip()] if result.stderr.strip() and result.returncode != 0 else [],
+        "warnings": warnings_list,
+    }
+
+
 _BUILDERS = {
     "platformio": _build_platformio,
     "cmake": _build_cmake,
@@ -332,6 +539,9 @@ def build_firmware(
     project_path: str,
     target: Optional[str] = None,
     env: Optional[str] = None,
+    platform: Optional[str] = None,
+    chip: Optional[str] = None,
+    force: bool = False,
 ) -> dict:
     """编译固件项目。
 
@@ -342,6 +552,9 @@ def build_firmware(
         project_path: 项目根目录路径。
         target: 可选的目标名（cmake/make 构建目标）。
         env: 可选的 PlatformIO 环境名。
+        platform: 可选的目标平台名，用于补充平台特定构建参数。
+        chip: 可选的目标芯片型号，用于补充平台特定构建参数。
+        force: 是否强制重新构建（cmake 传递 ``--clean-first``）。
 
     Returns:
         编译结果 dict::
@@ -366,11 +579,30 @@ def build_firmware(
 
     logger.info("构建系统: %s，项目: %s", build_system, root)
 
+    platform_name = (platform or "").lower()
+    if platform_name in ("esp32", "esp", "espressif") and build_system == "cmake":
+        return _build_esp_idf(root, chip=chip)
+    if platform_name in ("nordic", "nrf") and build_system == "cmake" and _is_zephyr_project(root):
+        return _build_west(root, chip=chip)
+
     builder = _BUILDERS[build_system]
 
     # PlatformIO 的 env 通过关键字参数传递
     if build_system == "platformio":
         return builder(root, env=env)
+    elif build_system == "cmake":
+        definitions: dict[str, str] = {}
+        if chip:
+            definitions["CHIP"] = chip
+        if platform_name in ("stm32", "st"):
+            from agent.platforms.stm32 import STM32Platform
+            definitions.update(STM32Platform().get_cmake_definitions(chip or ""))
+        if platform and chip and platform.lower() in ("nordic", "nrf"):
+            from agent.platforms.nordic import NordicPlatform
+            definitions["BOARD"] = NordicPlatform()._variant_to_board(chip)
+        return builder(root, target=target, definitions=definitions or None, force=force)
+    elif build_system == "make":
+        return builder(root, target=target, force=force)
     else:
         return builder(root, target=target)
 

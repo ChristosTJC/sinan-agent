@@ -15,6 +15,7 @@ Sinán 嵌入式 Agent —— 硬件工具层。
 
 import inspect
 import logging
+import os as _os
 import re
 from typing import Any, Callable, Optional
 from enum import Enum
@@ -107,18 +108,39 @@ class AuditLogger:
         _lock: 线程安全锁
     """
     def __init__(self, log_dir: str = ""):
-        self._log_dir = _Path(log_dir) if log_dir else _Path.home() / ".sinan" / "audit"
-        self._log_dir.mkdir(parents=True, exist_ok=True)
+        if log_dir:
+            self._log_dir = _Path(log_dir)
+        else:
+            sinan_home = _os.environ.get("SINAN_HOME", str(_Path.home() / ".sinan"))
+            self._log_dir = _Path(sinan_home) / "audit"
+        try:
+            self._log_dir.mkdir(parents=True, exist_ok=True)
+        except (OSError, PermissionError):
+            # 隔离/只读环境降级：审计日志写入 /tmp
+            import tempfile
+            self._log_dir = _Path(tempfile.gettempdir()) / "sinan-audit"
+            self._log_dir.mkdir(parents=True, exist_ok=True)
         self._lock = _threading.Lock()
 
     def log_tool_call(self, tool_name: str, danger_level: str, arguments: dict,
                       result: dict, duration_ms: float, success: bool):
-        """记录一次工具调用。"""
+        """记录一次工具调用（自动脱敏参数值）。"""
+        from agent.diagnostics import redact_text
+
+        sanitized_args = {}
+        for k, v in arguments.items():
+            if k == "data":
+                continue
+            if isinstance(v, str):
+                sanitized_args[k] = redact_text(v)
+            else:
+                sanitized_args[k] = v
+
         entry = {
             "timestamp": _datetime.now().isoformat(),
             "tool": tool_name,
             "danger_level": danger_level,
-            "arguments": {k: v for k, v in arguments.items() if k != "data"},
+            "arguments": sanitized_args,
             "success": success,
             "duration_ms": round(duration_ms, 2),
             "result_summary": str(result.get("error", "ok"))[:200] if not success else "ok"
@@ -171,6 +193,8 @@ class ToolRegistry:
         self._audit = AuditLogger()
         self._schemas: Optional[list[dict]] = None
         self._memory_tools_registered: bool = False
+        self._danger_confirm: bool = True
+        self._confirm_callback: Optional[Callable[[str, str, dict], bool]] = None
 
     # ------------------------------------------------------------------
     # 注册
@@ -295,7 +319,10 @@ class ToolRegistry:
         try:
             from agent.tools.serial_scanner import scan_usb_devices
 
-            self.register("scan_usb", scan_usb_devices, description="扫描 USB 设备")
+            def _scan_usb_handler(_arguments: dict) -> dict:
+                return {"success": True, "result": scan_usb_devices()}
+
+            self.register("scan_usb", _scan_usb_handler, description="扫描 USB 设备")
         except ImportError as exc:
             logger.warning("工具 scan_usb 不可用: %s", exc)
 
@@ -303,7 +330,14 @@ class ToolRegistry:
         try:
             from agent.tools.serial_scanner import scan_serial_ports
 
-            self.register("scan_serial", scan_serial_ports, description="扫描串口端口")
+            def _scan_serial_handler(_arguments: dict) -> dict:
+                return {"success": True, "result": scan_serial_ports()}
+
+            self.register(
+                "scan_serial",
+                _scan_serial_handler,
+                description="扫描串口端口（返回含 port_type/usb-serial|platform-serial、is_hardware 布尔标记）",
+            )
         except ImportError as exc:
             logger.warning("工具 scan_serial 不可用: %s", exc)
 
@@ -326,13 +360,18 @@ class ToolRegistry:
 
                     lines = monitor.monitor(duration_sec=duration)
                     monitor.close()
-                    return {
+                    data = "\n".join(lines)
+                    result = {
                         "success": True,
                         "port": port,
                         "lines": lines,
                         "line_count": len(lines),
-                        "data": "\n".join(lines),
+                        "data": data,
                     }
+                    if arguments.get("diagnose", False):
+                        from agent.tools.log_diagnostics import diagnose_log
+                        result["diagnostic"] = diagnose_log(data, platform=arguments.get("platform"))
+                    return result
                 except Exception as exc:
                     return {"success": False, "error": f"串口监控异常: {exc}"}
 
@@ -343,6 +382,8 @@ class ToolRegistry:
                     "port": {"type": "string", "description": "串口端口路径", "required": True},
                     "baudrate": {"type": "integer", "description": "波特率 (默认 115200)", "required": False},
                     "duration_sec": {"type": "number", "description": "监控时长秒数 (默认 5.0)", "required": False},
+                    "diagnose": {"type": "boolean", "description": "是否对采集到的日志执行自动诊断", "required": False},
+                    "platform": {"type": "string", "description": "可选诊断平台 esp32/stm32/nordic", "required": False},
                 },
             )
         except ImportError as exc:
@@ -399,7 +440,12 @@ class ToolRegistry:
                 project_path = arguments.get("project_path", ".")
                 target = arguments.get("target")
                 env = arguments.get("env")
-                return _build_fw(project_path=project_path, target=target, env=env)
+                platform = arguments.get("platform")
+                chip = arguments.get("chip")
+                return _build_fw(
+                    project_path=project_path, target=target, env=env,
+                    platform=platform, chip=chip,
+                )
 
             self.register(
                 "build_firmware", _build_firmware_handler,
@@ -409,6 +455,8 @@ class ToolRegistry:
                     "project_path": {"type": "string", "description": "固件项目根目录路径", "required": True},
                     "target": {"type": "string", "description": "编译目标名 (cmake/make)", "required": False},
                     "env": {"type": "string", "description": "PlatformIO 环境名", "required": False},
+                    "platform": {"type": "string", "description": "目标平台名，如 nordic/stm32/esp32", "required": False},
+                    "chip": {"type": "string", "description": "目标芯片型号，如 nRF52840/STM32F407", "required": False},
                 },
             )
         except ImportError as exc:
@@ -422,9 +470,11 @@ class ToolRegistry:
                 project_path = arguments.get("project_path", ".")
                 port = arguments.get("port", "")
                 method = arguments.get("method", "auto")
+                platform = arguments.get("platform")
+                chip = arguments.get("chip")
                 if not port:
                     return {"success": False, "error": "缺少参数: port"}
-                return _flash_fw(project_path=project_path, port=port, method=method)
+                return _flash_fw(project_path=project_path, port=port, method=method, platform=platform, chip=chip)
 
             self.register(
                 "flash_firmware", _flash_firmware_handler,
@@ -434,10 +484,149 @@ class ToolRegistry:
                     "project_path": {"type": "string", "description": "固件项目根目录路径", "required": True},
                     "port": {"type": "string", "description": "目标串口/调试端口路径", "required": True},
                     "method": {"type": "string", "description": "烧写方法 (auto/platformio/esptool/stm32cubeprog/openocd/jlink/arduino)", "required": False},
+                    "platform": {"type": "string", "description": "目标平台名，如 stm32/esp32/nordic", "required": False},
+                    "chip": {"type": "string", "description": "目标芯片型号，如 ESP32-S3/STM32F407/nRF52840", "required": False},
                 },
             )
         except ImportError as exc:
             logger.warning("工具 flash_firmware 不可用: %s", exc)
+
+        # ── pyocd_flash ──
+        try:
+            from agent.tools.pyocd_flasher import flash_with_pyocd as _pyocd_flash
+
+            def _pyocd_flash_handler(arguments: dict) -> dict:
+                firmware_path = arguments.get("firmware_path", "")
+                chip_model = arguments.get("chip_model", "")
+                base_address = arguments.get("base_address")
+                erase_mode = arguments.get("erase_mode", "sector")
+                frequency = arguments.get("frequency")
+                return _pyocd_flash(
+                    firmware_path=firmware_path,
+                    chip_model=chip_model,
+                    base_address=base_address,
+                    erase_mode=erase_mode,
+                    frequency=frequency,
+                )
+
+            self.register(
+                "pyocd_flash", _pyocd_flash_handler,
+                description="使用 pyOCD 按芯片型号烧录固件文件",
+                danger_level=DangerLevel.HIGH, timeout_sec=120.0,
+                parameters={
+                    "firmware_path": {"type": "string", "description": "固件文件路径", "required": True},
+                    "chip_model": {"type": "string", "description": "芯片型号，如 nRF52840", "required": True},
+                    "base_address": {"type": "integer", "description": "可选基地址，仅 .bin 常用", "required": False},
+                    "erase_mode": {"type": "string", "description": "擦除模式 sector/chip/auto", "required": False},
+                    "frequency": {"type": "integer", "description": "调试器频率 Hz", "required": False},
+                },
+            )
+        except ImportError as exc:
+            logger.warning("工具 pyocd_flash 不可用: %s", exc)
+
+        # ── nrfjprog_flash ──
+        try:
+            from agent.tools.nrfjprog_flasher import flash_with_nrfjprog as _nrfjprog_flash
+
+            def _nrfjprog_flash_handler(arguments: dict) -> dict:
+                firmware_path = arguments.get("firmware_path", "")
+                chip_model = arguments.get("chip_model", "")
+                coprocessor = arguments.get("coprocessor")
+                erase_mode = arguments.get("erase_mode", "sector")
+                return _nrfjprog_flash(
+                    firmware_path=firmware_path,
+                    chip_model=chip_model,
+                    coprocessor=coprocessor,
+                    erase_mode=erase_mode,
+                )
+
+            self.register(
+                "nrfjprog_flash", _nrfjprog_flash_handler,
+                description="使用 nrfjprog 烧录 Nordic nRF52/nRF53 固件文件",
+                danger_level=DangerLevel.HIGH, timeout_sec=120.0,
+                parameters={
+                    "firmware_path": {"type": "string", "description": "固件文件路径", "required": True},
+                    "chip_model": {"type": "string", "description": "芯片型号，如 nRF52840/nRF5340", "required": True},
+                    "coprocessor": {"type": "string", "description": "nRF53 可选核，如 CP_APPLICATION/CP_NETWORK", "required": False},
+                    "erase_mode": {"type": "string", "description": "擦除模式 sector/chip", "required": False},
+                },
+            )
+        except ImportError as exc:
+            logger.warning("工具 nrfjprog_flash 不可用: %s", exc)
+
+        # ── esp32_diagnose_log ──
+        try:
+            from agent.tools.esp32_diagnostics import diagnose_esp32_log as _esp32_diagnose_log
+
+            def _esp32_diagnose_log_handler(arguments: dict) -> dict:
+                log_text = arguments.get("log", "")
+                return _esp32_diagnose_log(log_text)
+
+            self.register(
+                "esp32_diagnose_log", _esp32_diagnose_log_handler,
+                description="分析 ESP32 串口日志中的 reset、panic、brownout 和 backtrace",
+                parameters={
+                    "log": {"type": "string", "description": "ESP32 串口日志文本", "required": True},
+                },
+            )
+        except ImportError as exc:
+            logger.warning("工具 esp32_diagnose_log 不可用: %s", exc)
+
+        # ── stm32_diagnose_log ──
+        try:
+            from agent.tools.stm32_diagnostics import diagnose_stm32_log as _stm32_diagnose_log
+
+            def _stm32_diagnose_log_handler(arguments: dict) -> dict:
+                log_text = arguments.get("log", "")
+                return _stm32_diagnose_log(log_text)
+
+            self.register(
+                "stm32_diagnose_log", _stm32_diagnose_log_handler,
+                description="分析 STM32 日志中的 HardFault、HAL 状态和调试器连接失败",
+                parameters={
+                    "log": {"type": "string", "description": "STM32 固件/烧录/调试日志文本", "required": True},
+                },
+            )
+        except ImportError as exc:
+            logger.warning("工具 stm32_diagnose_log 不可用: %s", exc)
+
+        # ── nordic_diagnose_log ──
+        try:
+            from agent.tools.nordic_diagnostics import diagnose_nordic_log as _nordic_diagnose_log
+
+            def _nordic_diagnose_log_handler(arguments: dict) -> dict:
+                log_text = arguments.get("log", "")
+                return _nordic_diagnose_log(log_text)
+
+            self.register(
+                "nordic_diagnose_log", _nordic_diagnose_log_handler,
+                description="分析 Nordic/Zephyr 日志中的 fatal、assert、fault 和 reset reason",
+                parameters={
+                    "log": {"type": "string", "description": "Nordic/Zephyr 串口或 RTT 日志文本", "required": True},
+                },
+            )
+        except ImportError as exc:
+            logger.warning("工具 nordic_diagnose_log 不可用: %s", exc)
+
+        # ── diagnose_log ──
+        try:
+            from agent.tools.log_diagnostics import diagnose_log as _diagnose_log
+
+            def _diagnose_log_handler(arguments: dict) -> dict:
+                log_text = arguments.get("log", "")
+                platform = arguments.get("platform")
+                return _diagnose_log(log_text, platform=platform)
+
+            self.register(
+                "diagnose_log", _diagnose_log_handler,
+                description="自动识别并分析嵌入式串口日志（ESP32/STM32/Nordic）",
+                parameters={
+                    "log": {"type": "string", "description": "串口/烧录/崩溃日志文本", "required": True},
+                    "platform": {"type": "string", "description": "可选平台名 esp32/stm32/nordic", "required": False},
+                },
+            )
+        except ImportError as exc:
+            logger.warning("工具 diagnose_log 不可用: %s", exc)
 
         # ── device_probe ──
         try:
@@ -790,6 +979,23 @@ class ToolRegistry:
         """
         return self._audit.query(tool_name=tool_name, date=date, limit=limit)
 
+    def set_confirm_callback(self, callback: Optional[Callable[[str, str, dict], bool]]) -> None:
+        """设置危险工具确认回调。
+
+        回调签名为 ``(tool_name, danger_level, arguments) -> bool``，
+        返回 ``True`` 表示用户确认执行，``False`` 表示拒绝。
+
+        设为 ``None`` 时，所有 MEDIUM/HIGH 工具调用将被拒绝并返回错误。
+        """
+        self._confirm_callback = callback
+
+    def set_danger_confirm(self, enabled: bool) -> None:
+        """启用/禁用危险工具确认门控。
+
+        ``False`` 时跳过所有确认（如 ``--force`` / ``--yes`` 模式）。
+        """
+        self._danger_confirm = enabled
+
     # ------------------------------------------------------------------
     # 调用
     # ------------------------------------------------------------------
@@ -829,8 +1035,23 @@ class ToolRegistry:
             return result
 
         danger_level = self.get_danger_level(name)
-        if danger_level == DangerLevel.HIGH:
-            logger.warning("调用 HIGH 危险等级工具: %s", name)
+
+        # 危险工具确认门控 — 覆盖 MEDIUM 和 HIGH 等级
+        if self._danger_confirm and danger_level in (DangerLevel.MEDIUM, DangerLevel.HIGH):
+            if self._confirm_callback is None:
+                result = {
+                    "success": False,
+                    "error": f"危险工具 '{name}' (等级: {danger_level.value}) 需要确认，但未设置确认回调",
+                }
+                self._audit.log_tool_call(name, danger_level.value, arguments, result, 0.0, False)
+                return result
+            if not self._confirm_callback(name, danger_level.value, arguments):
+                result = {
+                    "success": False,
+                    "error": f"用户拒绝执行危险工具 '{name}' (等级: {danger_level.value})",
+                }
+                self._audit.log_tool_call(name, danger_level.value, arguments, result, 0.0, False)
+                return result
 
         start_time = _time.time()
         try:

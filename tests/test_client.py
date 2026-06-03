@@ -22,6 +22,7 @@ from agent.llm.client import (
     OpenAIClient,
     create_client,
     detect_provider,
+    normalize_proxy_environment,
 )
 
 
@@ -113,6 +114,33 @@ class TestBuildChatBody:
         body = c._build_chat_body([{"role": "user", "content": "hi"}], tools, stream=True)
         assert body["stream"] is True
         assert body["tools"] == tools
+
+
+# ---------------------------------------------------------------------------
+# Proxy environment normalization
+# ---------------------------------------------------------------------------
+
+
+class TestProxyNormalization:
+    def test_socks_scheme_is_normalized_for_httpx(self):
+        with mock.patch.dict(os.environ, {"ALL_PROXY": "socks://127.0.0.1:7897"}, clear=True):
+            normalize_proxy_environment()
+            assert os.environ["ALL_PROXY"] == "socks5://127.0.0.1:7897"
+
+    def test_http_proxy_is_left_unchanged(self):
+        with mock.patch.dict(os.environ, {"HTTPS_PROXY": "http://127.0.0.1:7897"}, clear=True):
+            normalize_proxy_environment()
+            assert os.environ["HTTPS_PROXY"] == "http://127.0.0.1:7897"
+
+    def test_loopback_https_proxy_is_normalized_to_plain_http_proxy(self):
+        with mock.patch.dict(os.environ, {"HTTPS_PROXY": "https://127.0.0.1:7897/"}, clear=True):
+            normalize_proxy_environment()
+            assert os.environ["HTTPS_PROXY"] == "http://127.0.0.1:7897/"
+
+    def test_remote_https_proxy_is_left_unchanged(self):
+        with mock.patch.dict(os.environ, {"HTTPS_PROXY": "https://proxy.example.com:8443"}, clear=True):
+            normalize_proxy_environment()
+            assert os.environ["HTTPS_PROXY"] == "https://proxy.example.com:8443"
 
 
 # ---------------------------------------------------------------------------

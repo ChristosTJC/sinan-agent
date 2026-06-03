@@ -7,7 +7,10 @@
 """
 
 from __future__ import annotations
+import os
+import re
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import List, Dict, Optional, Any
 from enum import Enum
 
@@ -165,11 +168,106 @@ class PlatformRegistry:
         return list(self._flash_tools.keys())
 
     def detect_platform(self, project_dir: str) -> Optional[ChipFamily]:
-        """自动检测项目使用的平台（通过构建文件、源码等）"""
-        # TODO: 实现自动检测逻辑
-        # 1. 检查 CMakeLists.txt 中的 CMAKE_TOOLCHAIN_FILE
-        # 2. 检查 Makefile 中的 MCU 定义
-        # 3. 扫描源码中的 #include 头文件
+        """自动检测项目使用的平台。
+
+        检测策略（按优先级）:
+            1. 环境变量 ``SINAN_CHIP_FAMILY``
+            2. ``CMakeLists.txt`` 中的 ``CMAKE_TOOLCHAIN_FILE`` 或 ``BOARD=``
+            3. ``Makefile`` 中的 ``MCU`` 定义
+            4. ``platformio.ini`` 中的 ``board`` 字段
+            5. 源码头文件特征（``#include <stm32f4xx.h>`` 等）
+
+        Returns:
+            匹配的 ChipFamily，未检测到返回 None。
+        """
+        root = Path(project_dir)
+        if not root.is_dir():
+            return None
+
+        # 1. 环境变量覆盖
+        env_family = os.environ.get("SINAN_CHIP_FAMILY", "")
+        if env_family:
+            family = self._families.get(env_family)
+            if family:
+                return family
+
+        # 2. CMakeLists.txt
+        cmake_file = root / "CMakeLists.txt"
+        if cmake_file.is_file():
+            content = cmake_file.read_text(errors="replace")
+            # CMAKE_TOOLCHAIN_FILE
+            m = re.search(r"CMAKE_TOOLCHAIN_FILE\s+[\"']?([^\"'\s)]+)", content)
+            if m:
+                toolchain = m.group(1).lower()
+                for name, fam in self._families.items():
+                    if name.lower() in toolchain or fam.name.lower() in toolchain:
+                        return fam
+            # BOARD=
+            m = re.search(r"(?:set\s*\(\s*|)BOARD\s+[\"']?(\S+?)[\"']?\s*[) ]", content)
+            if m:
+                board = m.group(1).lower()
+                for name, fam in self._families.items():
+                    if name.lower() in board:
+                        return fam
+
+        # 3. Makefile
+        makefile = root / "Makefile"
+        if makefile.is_file():
+            content = makefile.read_text(errors="replace")
+            m = re.search(r'(?:MCU|DEVICE|CHIP|TARGET)\s*[:?]?=\s*(\S+)', content, re.IGNORECASE)
+            if m:
+                mcu = m.group(1).lower()
+                for name, fam in self._families.items():
+                    if name.lower() in mcu:
+                        return fam
+
+        # 4. platformio.ini
+        pio_ini = root / "platformio.ini"
+        if pio_ini.is_file():
+            content = pio_ini.read_text(errors="replace")
+            for line in content.splitlines():
+                line = line.strip()
+                if "board =" in line.lower():
+                    board = line.split("=", 1)[1].strip().lower()
+                    for name, fam in self._families.items():
+                        keywords = [name.lower(), fam.vendor.lower()]
+                        if any(kw in board for kw in keywords):
+                            return fam
+
+        # 5. 源码头文件特征扫描
+        chip_headers = {
+            "STM32": [r'#include\s+<stm32f\d', r'#include\s+<stm32l\d', r'#include\s+<stm32g\d', r'#include\s+<stm32h\d'],
+            "nRF": [r'#include\s+<nrf52', r'#include\s+<nrf53', r'#include\s+<nrfx'],
+            "nRF52": [r'#include\s+<nrf52', r'#include\s+<nrfx'],
+            "nRF53": [r'#include\s+<nrf53'],
+            "ESP32": [r'#include\s+<esp_', r'#include\s+<freertos/FreeRTOS\.h'],
+            "RP2040": [r'#include\s+<pico/', r'#include\s+"pico/'],
+        }
+        for family_name, patterns in chip_headers.items():
+            if family_name not in self._families:
+                continue
+            for src_file in root.rglob("*.c"):
+                try:
+                    text = src_file.read_text(errors="replace")
+                    if any(re.search(pat, text) for pat in patterns):
+                        return self._families[family_name]
+                except Exception:
+                    continue
+            for src_file in root.rglob("*.cpp"):
+                try:
+                    text = src_file.read_text(errors="replace")
+                    if any(re.search(pat, text) for pat in patterns):
+                        return self._families[family_name]
+                except Exception:
+                    continue
+            for src_file in root.rglob("*.h"):
+                try:
+                    text = src_file.read_text(errors="replace")
+                    if any(re.search(pat, text) for pat in patterns):
+                        return self._families[family_name]
+                except Exception:
+                    continue
+
         return None
 
 

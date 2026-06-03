@@ -1,0 +1,42 @@
+name: STM32G474RE
+manufacturer: STMicroelectronics
+arch: ARM Cortex-M4F (with FPU)
+max_clock: 170MHz
+flash: up to 512KB
+ram: 128KB (96KB SRAM + 32KB CCM-SRAM)
+voltage: 1.71V-3.6V
+package: LQFP64
+key_features:
+  - Cortex-M4F with single-precision FPU and DSP
+  - HRTIM (高精度定时器): 12 路输出, 184ps 分辨率
+  - CORDIC (坐标旋转数字计算器) + FMAC (滤波数学加速器)
+  - 2x CAN-FD (兼容 CAN 2.0)
+  - USB-C PD (Power Delivery) 控制器
+  - 5x 12-bit ADC (4MSPS), 7x 12-bit DAC
+  - 6x 比较器, 6x 运算放大器 (内置 PGA)
+  - 4x USART, 3x SPI, 4x I2C, 2x SAI
+  - USB 2.0 Full Speed (crystal-less)
+  - 数学加速器: CORDIC 三角/双曲, FMAC 乘积累加
+clock_tree:
+  HSI16: 16MHz (internal RC, 1% 精度出厂校准)
+  HSI48: 48MHz (internal RC, 供 USB 和 RNG)
+  HSE: 4-48MHz (external crystal)
+  PLL: up to 170MHz
+  PLLP: ADC 时钟输出 (max 122MHz)
+  PLLQ: 48MHz 输出 (USB/RNG/SDMMC)
+  PLLR: 系统时钟输出 (max 170MHz)
+  APB1: max 170MHz
+  APB2: max 170MHz
+common_pitfalls:
+  - "HRTIM 时钟源来自系统时钟或 PLL，需确保 APB2 定时器时钟 = HRTIM 时钟配置一致"
+  - "CORDIC 输入/输出格式固定为 q1.31 (有符号小数)，使用前需手工做定点转换"
+  - "CCM-SRAM (32KB) 位于数据总线，不能用于 DMA 传输；DMA 只能访问非 CCM 区域"
+  - "CAN-FD 模式需外接支持 FD 的收发器，速率 >1Mbps 时 PCB 走线阻抗需匹配"
+  - "内置运放 (OPAMP) 为轨到轨输入/输出，但 PGA 增益误差典型值 2%，精密应用需校准"
+  - "USB crystal-less 模式使用 HSI48 同步时钟，仅限 Full Speed；High Speed 需外部 PHY"
+  - "Flash 等待周期：0WS(0-34MHz), 1WS(34-68MHz), 2WS(68-102MHz), 4WS(102-170MHz)"
+programming_interfaces:
+  - SWD (Serial Wire Debug)
+  - JTAG
+  - USART bootloader (system memory)
+  - USB DFU

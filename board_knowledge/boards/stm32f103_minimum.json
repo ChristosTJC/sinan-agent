@@ -1,0 +1,160 @@
+{
+  "schema_version": "1.0.0",
+  "board_id": "stm32f103_minimum",
+  "display_name": "STM32F103C8T6 最小系统板 (Blue Pill)",
+  "description": "基于 STM32F103C8T6 的 ARM Cortex-M3 最小系统板，俗称 Blue Pill。引出全部可用 IO，通过双排 2.54mm 排针连接。成本低、社区资料丰富，适合入门学习和原型验证。",
+
+  "mcu": {
+    "model": "STM32F103C8T6",
+    "manufacturer": "STMicroelectronics",
+    "arch": "ARM Cortex-M3",
+    "clock": "72MHz",
+    "flash": "64KB",
+    "ram": "20KB",
+    "voltage": "2.0V-3.6V",
+    "cores": 1
+  },
+
+  "ports": [
+    {
+      "name": "USART1",
+      "type": "serial",
+      "pins": {
+        "TX": "PA9",
+        "RX": "PA10"
+      },
+      "connector": "Dupont 2.54mm (排针引出)",
+      "notes": "默认串口，常用波特率 115200。PA9/PA10 也可通过板载 USB 转串口（若有）连接。通过 USART1 bootloader 可使用 stm32flash 或 Flash Loader Demonstrator 烧录固件"
+    },
+    {
+      "name": "I2C1",
+      "type": "i2c",
+      "pins": {
+        "SCL": "PB6",
+        "SDA": "PB7"
+      },
+      "connector": "Dupont 2.54mm",
+      "notes": "I2C1 默认引脚（复用功能）。需外接 4.7kΩ 上拉电阻到 3.3V。PB6/PB7 默认也是 JTAG 口，需先释放 JTAG 才能用于 I2C"
+    },
+    {
+      "name": "SPI1",
+      "type": "spi",
+      "pins": {
+        "SCLK": "PA5",
+        "MOSI": "PA7",
+        "MISO": "PA6",
+        "NSS": "PA4"
+      },
+      "connector": "Dupont 2.54mm",
+      "notes": "SPI1 挂载在高速 APB2 总线，最大时钟 36 MHz"
+    },
+    {
+      "name": "SWD",
+      "type": "swd",
+      "pins": {
+        "SWDIO": "PA13",
+        "SWCLK": "PA14"
+      },
+      "connector": "4-pin 排针或 SH 1.0mm",
+      "notes": "ST-Link / J-Link 调试烧录接口。PA13/PA14 默认即为 SWD 功能，代码中切勿将它们配置为普通 GPIO 输出，否则下次无法连接调试器"
+    },
+    {
+      "name": "USB",
+      "type": "usb",
+      "pins": {
+        "USB_DM": "PA11",
+        "USB_DP": "PA12"
+      },
+      "connector": "Micro-USB（需外接 USB 座或通过板载 micro-USB 连接）",
+      "notes": "USB 全速设备（12 Mbps）。PA11/PA12 在使用 USB 时不可用作 CAN 功能（引脚复用冲突）。需要 48 MHz 精准时钟，由 HSE (8MHz) + PLL 提供。如需 USB 功能，板上必须焊接 8MHz HSE 晶振"
+    },
+    {
+      "name": "power_3v3",
+      "type": "power",
+      "pins": {
+        "3V3": "3.3V",
+        "GND": "GND"
+      },
+      "connector": "Dupont 2.54mm",
+      "notes": "3.3V 电源轨。板载 LDO（典型 AMS1117-3.3 或 ME6211），最大输出约 800 mA。所有 GPIO 均为 3.3V 电平"
+    },
+    {
+      "name": "power_5v",
+      "type": "power",
+      "pins": {
+        "5V": "5V",
+        "GND": "GND"
+      },
+      "connector": "Dupont 2.54mm / USB 供电",
+      "notes": "5V 输入，通过 USB 或外部电源。经 LDO 降压至 3.3V 供 MCU 使用。板载防反接二极管"
+    }
+  ],
+
+  "peripherals": [
+    {
+      "name": "板载 LED",
+      "kind": "led",
+      "pins": {
+        "LED": "PC13"
+      },
+      "notes": "低电平点亮（active low），通过限流电阻连接。可用于心跳指示或调试输出。注意：PC13 为 TAMPER-RTC 引脚，输出驱动能力较弱（约 3 mA），限流电阻通常为 470Ω-1kΩ"
+    },
+    {
+      "name": "8MHz HSE 晶振",
+      "kind": "interface",
+      "model": "8MHz 无源晶振",
+      "pins": {
+        "OSC_IN": "PD0",
+        "OSC_OUT": "PD1"
+      },
+      "notes": "板上已焊接 8MHz 高速外部晶振（HSE）。PLL 通常以 HSE/1 作为输入源，经 ×9 倍频得到 72 MHz 系统时钟。注意与 HSI (8MHz 内部 RC) 区分——HSE 精度更高但需要起振时间"
+    },
+    {
+      "name": "32.768kHz LSE 晶振焊盘",
+      "kind": "interface",
+      "model": "32.768kHz 无源晶振（焊盘预留）",
+      "pins": {
+        "OSC32_IN": "PC14",
+        "OSC32_OUT": "PC15"
+      },
+      "notes": "低速外部晶振（LSE）焊盘，板上通常未焊接。如需使用 RTC 时钟，需自行焊接 32.768kHz 晶振并配 6-10pF 负载电容。不焊时 RTC 需使用 LSI (40kHz 内部 RC)"
+    },
+    {
+      "name": "BOOT0 跳线帽",
+      "kind": "interface",
+      "pins": {
+        "BOOT0": "BOOT0"
+      },
+      "notes": "BOOT0 跳线帽决定启动模式：低电平（接地）= 从主 Flash 启动（正常运行），高电平（接 3.3V）= 从系统存储器启动（进入出厂 Bootloader）。烧录固件时如使用 USART1 bootloader 方式，需将 BOOT0 置高后复位"
+    }
+  ],
+
+  "common_pitfalls": [
+    "BOOT0 引脚：低电平 = 从 Flash 启动（正常运行），高电平 = 从系统存储器启动（出厂 Bootloader 模式）。使用串口烧录前需确认 BOOT0 为高电平",
+    "PB3/PB4/PB5/PB6 默认是 JTAG 功能引脚。使用这些引脚作为 GPIO 前需先关闭 JTAG（保留 SWD）：调用 GPIO_PinRemapConfig(GPIO_Remap_SWJ_JTAGDisable, ENABLE)。仅关闭 JTAG 不影响 SWD（PA13/PA14），仍可正常调试",
+    "板载 8MHz HSE 晶振与内部 HSI (8MHz RC) 要区分。使用 HSE+PLL 倍频时需注意：C8T6 最大 72MHz，PLL 倍频系数为 9（8MHz × 9 = 72MHz）。如果选错时钟源（如用 HSI/2 × 16），系统主频将与预期不同",
+    "PA11/PA12 的 USB 功能与 CAN 功能冲突——它们是同一引脚的两种复用功能，不能同时使用 USB 和 CAN。USB 需要 48MHz 时钟，由 PLL 从 HSE 倍频产生；CAN 需单独配置 APB1 时钟",
+    "Vbat 引脚（VBAT）：如需 RTC 后备供电（掉电时保持 RTC 走时），应接 CR1220 等 3V 纽扣电池。不使用 RTC 时可将 VBAT 接 VDD（3.3V）或直接接地",
+    "PA13/PA14 是 SWD 调试口，代码中千万不要将它们配置为普通 GPIO 输出。一旦覆盖 SWD 功能，需要将 BOOT0 拉高后通过串口 Bootloader 擦除芯片才能恢复",
+    "ADC 的 VREF+ 引脚默认与 VDDA 相连，板上未外接独立基准电压源。如需精确模拟测量，建议外接 TL431 或 REF3033 等基准芯片"
+  ],
+
+  "safety_notes": [
+    "STM32F103C8T6 所有 GPIO 引脚均为 5V tolerant，但 VDD 本身不可超过 4.0V。IO 引脚输入电压上限为 VDD+4.0V（即约 7.6V），但仍建议不长期使用 5V 输入",
+    "PA11/PA12 在 USB 模式下不得使用 5V 电平——USB 协议要求差分信号为 3.3V 电平，强行接 5V 会损坏 USB PHY",
+    "IO 引脚最大灌/拉电流：单个引脚 ±25 mA 绝对值，所有引脚总和不超过 150 mA。驱动大电流负载（如继电器、电机）必须使用三极管或 MOS 管驱动",
+    "芯片工作温度范围：-40°C 至 +85°C（工业级）。Blue Pill 的 LDO（AMS1117-3.3）在满负荷下发热明显，注意散热"
+  ],
+
+  "programming_interfaces": [
+    "SWD (ST-Link V2/V3, J-Link, DAP-Link)",
+    "USART1 bootloader (PA9/PA10, 需 BOOT0 拉高后复位, 通过 stm32flash 或 Flash Loader Demonstrator)",
+    "USB DFU 不支持 —— STM32F103 无 DFU bootloader（此功能仅 F105/F107/F2/F4 系列支持）"
+  ],
+
+  "metadata": {
+    "author": "司南嵌入式智能体团队",
+    "created": "2026-06-02",
+    "datasheet_url": "https://www.st.com/resource/en/datasheet/stm32f103c8.pdf"
+  }
+}

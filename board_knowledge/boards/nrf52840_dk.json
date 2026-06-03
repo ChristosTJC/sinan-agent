@@ -1,0 +1,196 @@
+{
+  "schema_version": "1.0.0",
+  "board_id": "nrf52840_dk",
+  "display_name": "Nordic nRF52840-DK 开发板",
+  "description": "Nordic 半导体官方 nRF52840 开发套件（Development Kit），搭载 nRF52840 SoC。支持 Bluetooth 5.4 / Bluetooth Low Energy / Thread / Zigbee / ANT / NFC-A / 802.15.4 等多协议，板载 SEGGER J-Link OB 调试器，适用于无线传感器、可穿戴设备、HID 外设等低功耗无线产品原型开发。",
+
+  "mcu": {
+    "model": "nRF52840",
+    "manufacturer": "Nordic Semiconductor",
+    "arch": "ARM Cortex-M4 with FPU",
+    "clock": "64MHz",
+    "flash": "1MB",
+    "ram": "256KB",
+    "voltage": "1.7V-5.5V",
+    "cores": 1
+  },
+
+  "ports": [
+    {
+      "name": "USB (J-Link OB)",
+      "type": "usb",
+      "pins": {
+        "USB_DM": "P0.29",
+        "USB_DP": "P0.30"
+      },
+      "connector": "Micro-USB (J-Link OB 专用)",
+      "notes": "板载 SEGGER J-Link OB 调试器通过此 micro-USB 接口与 PC 连接，提供 SWD 调试 + VCOM 虚拟串口 + 供电。J-Link OB USB 与 nRF52840 原生 USB 共用同一 USB 口——如要使用 nRF52840 原生 USB 功能，需断开 J-Link OB 的 USB 连接（参见 common_pitfalls）"
+    },
+    {
+      "name": "VCOM (虚拟串口)",
+      "type": "serial",
+      "pins": {
+        "TX": "P0.06",
+        "RX": "P0.08",
+        "RTS": "P0.05",
+        "CTS": "P0.07"
+      },
+      "connector": "Micro-USB (通过 J-Link OB 的 CDC-ACM)",
+      "notes": "虚拟串口通过板载 J-Link OB 的 CDC-ACM 实现。PC 端枚举为标准 COM 口，nRF52840 端通过 UARTE 外设连接。支持硬件流控（RTS/CTS）"
+    },
+    {
+      "name": "NFC-A 天线",
+      "type": "network",
+      "pins": {
+        "NFC1": "P0.09",
+        "NFC2": "P0.10"
+      },
+      "connector": "PCB 线圈天线 + 可选外部天线焊盘",
+      "notes": "NFC-A 标签接口，通过 PCB 上集成的线圈天线或外接天线工作。启用 NFC 后 P0.09/P0.10 不能再用作普通 GPIO。NFC 天线的匹配网络和电感需参考 Nordic NFC 天线设计指南"
+    },
+    {
+      "name": "QSPI (外部 Flash)",
+      "type": "spi",
+      "pins": {
+        "CLK": "P0.19",
+        "CSN": "P0.17",
+        "IO0": "P0.20",
+        "IO1": "P0.21",
+        "IO2": "P0.22",
+        "IO3": "P0.23"
+      },
+      "connector": "焊盘（板上预留）",
+      "notes": "QSPI 外设专用引脚，用于连接外部 QSPI Flash（板上预留焊盘）。支持单线/双线/四线模式。如果使用 nRF5 SDK，需配置 QSPI 驱动并映射到内存映射区域（0x12000000）"
+    },
+    {
+      "name": "power_USB",
+      "type": "power",
+      "pins": {
+        "VBUS": "5V",
+        "GND": "GND"
+      },
+      "connector": "Micro-USB",
+      "notes": "USB 供电（5V），通过板载 LDO 降压至 3.3V 供 nRF52840 和外设使用。开发板 USB 供电电流有限（约 500 mA），外部传感器取电建议通过 LiPo 电池接口"
+    },
+    {
+      "name": "power_LiPo",
+      "type": "power",
+      "pins": {
+        "VBAT+": "LiPo+",
+        "VBAT-": "GND"
+      },
+      "connector": "JST PH 2.0 电池座",
+      "notes": "锂电池接口（3.7V LiPo）。板载充电管理 IC，可通过 USB 为电池充电。也支持通过 CR2032 纽扣电池座供电（低功耗测试场景）"
+    },
+    {
+      "name": "Arduino 兼容排针",
+      "type": "gpio",
+      "pins": {
+        "D0-D13": "标准 Arduino Uno 排针布局",
+        "A0-A5": "模拟输入排针"
+      },
+      "connector": "Dupont 2.54mm 排母",
+      "notes": "兼容 Arduino Uno R3 排针布局，可直接插入 Arduino 扩展板（Shield）。注意：nRF52840 为 3.3V 电平，Arduino 扩展板通常为 5V 设计，直接插入可能损坏引脚——使用前确认扩展板支持 3.3V 或加装电平转换"
+    }
+  ],
+
+  "peripherals": [
+    {
+      "name": "SEGGER J-Link OB 调试器",
+      "kind": "interface",
+      "model": "J-Link OB (Board Controller)",
+      "protocol": "SWD",
+      "pins": {
+        "SWDIO": "P0.18 (通过板载调试器)",
+        "SWCLK": "SWCLK (通过板载调试器)"
+      },
+      "notes": "板载 SEGGER J-Link OB 提供 SWD 调试 + VCOM 虚拟串口 + 供电。通过板载接口 MCU（通常为 Atmel ATSAM3U2C）桥接。也支持通过 P20 排针连接外部目标设备进行调试和烧录"
+    },
+    {
+      "name": "用户 LED x4",
+      "kind": "led",
+      "pins": {
+        "LED1": "P0.13",
+        "LED2": "P0.14",
+        "LED3": "P0.15",
+        "LED4": "P0.16"
+      },
+      "notes": "4 个用户可编程 LED，低电平点亮（active low）。通过限流电阻连接，可用于状态指示、调试输出或 PWM 亮度控制"
+    },
+    {
+      "name": "用户按钮 x4",
+      "kind": "button",
+      "pins": {
+        "BTN1": "P0.11",
+        "BTN2": "P0.12",
+        "BTN3": "P0.24",
+        "BTN4": "P0.25"
+      },
+      "notes": "4 个用户按钮，按下为低电平（接 GND）。无硬件去抖，需在软件中处理按键消抖。常用于用户交互、模式切换或触发特定操作"
+    },
+    {
+      "name": "复位按钮",
+      "kind": "button",
+      "pins": {
+        "RESET": "nRESET"
+      },
+      "notes": "硬件复位按钮，按下将 nRF52840 复位引脚拉低，触发系统复位。与 IF BOOT 按钮配合可进入 DFU 模式"
+    },
+    {
+      "name": "NFC 线圈天线",
+      "kind": "communication",
+      "model": "PCB 集成 NFC 天线",
+      "pins": {
+        "NFC1": "P0.09",
+        "NFC2": "P0.10"
+      },
+      "notes": "PCB 上集成的 NFC-A 标签天线线圈。Nordic 已对天线进行阻抗匹配设计。如需更大通信距离，可断开 PCB 天线（通过板上的 0Ω 电阻跳线）并外接定制天线"
+    },
+    {
+      "name": "外部 QSPI Flash 焊盘",
+      "kind": "storage",
+      "model": "MX25R6435F (预留焊盘)",
+      "protocol": "QSPI",
+      "pins": {
+        "CSN": "P0.17",
+        "CLK": "P0.19",
+        "IO0": "P0.20",
+        "IO1": "P0.21",
+        "IO2": "P0.22",
+        "IO3": "P0.23"
+      },
+      "notes": "板上预留 QSPI Flash 焊盘，默认未焊接。MX25R6435F 为 64Mbit (8MB) 低功耗串行 NOR Flash，支持执行到位（XIP）。焊接后可通过 QSPI 外设映射到内存地址空间"
+    }
+  ],
+
+  "common_pitfalls": [
+    "板载 J-Link OB 默认占用 VCOM 端口。如需使用 nRF52840 原生 USB 功能（如 USB HID 或 USB CDC-ACM），必须断开 J-Link OB 与 nRF52840 USB 引脚的连接——通过切割 SB12/SB13 跳线或断开 P20 排针上的对应引脚",
+    "NFC 天线与 GPIO 共用 P0.09/P0.10。在固件中一旦启用 NFCT 外设（调用 nrfx_nfct_init() 或 SoftDevice 使能 NFC），这两个引脚立即进入 NFC 模式，不可再用作 GPIO。禁用 NFC 后需等待 NFC 磁场释放（约 500ms）才能恢复为 GPIO",
+    "Nordic 的 SoftDevice（协议栈）占用 ARM Cortex-M 的前几个中断优先级——通常保留优先级 0/1/4（因 nRF52840 仅有 8 个优先级位，实际 NVIC 优先级 0/2/4/6 不可用）。应用中断优先级不能设置得比 SoftDevice 更高。使用 __NVIC_SetPriority() 时需确保优先级值在允许范围内",
+    "开发板 USB 供电电流有限（~500 mA）。如同时使用外部传感器、大功率 LED 或 RF 测试仪器，建议通过 LiPo 电池或外部 5V 供电。外接传感器直接从 VDD_nRF (3.3V) 取电时注意 LDO 输出电流上限",
+    "DPPI（可编程外设互连）是 nRF52/nRF53 系列独有的硬件特性，允许外设间不经过 CPU 直接交换信号。初次接触 Nordic 的用户容易忽略这一功能——可以用 DPPI 实现极低功耗的事件驱动，例如 TIMER → GPIOTE 触发无 CPU 参与的输出",
+    "Nordic 的 GPIOTE（GPIO Tasks and Events）通道有限（nRF52840 有 8 个 GPIOTE 通道）。如果同时使用多个 GPIO 中断或任务，需合理分配通道。普通 GPIO 读/写不受此限制",
+    "nRF52840 USB 端口（REG0 DC/DC）需要在固件中手动启用 DC/DC 转换器以获得更低的 USB 功耗。若不启用，USB 将使用线性稳压器，效率低且发热明显"
+  ],
+
+  "safety_notes": [
+    "nRF52840 所有 GPIO 均非 5V tolerant —— 绝对不可灌入 5V 电平。错接 5V 到任何 GPIO 引脚会永久损坏芯片。所有外部信号必须为 1.7V-3.6V（VDD 范围），推荐 3.3V",
+    "如使用 Arduino 扩展板（通常为 5V 设计），务必先确认扩展板支持 3.3V 操作，或在中间加电平转换器。多数 Arduino 5V 扩展板直接插入 nRF52840-DK 会烧毁 GPIO",
+    "板载 LiPo 电池充电 IC 有充电电流限制（通常通过电阻设置）。更换不同容量电池前请确认充电电流是否匹配，避免电池过热或损坏",
+    "RF 天线匹配区域勿覆盖金属或大面积铺铜。nRF52840-DK 的 PCB 天线（IFA 或 PIFA 类型）位于板边特定区域，遮蔽天线会导致通信距离严重下降。使用外部天线时需断开板上天线匹配网络",
+    "工作温度范围：-40°C 至 +85°C（nRF52840 SoC 级别）。但板载组件（J-Link OB MCU、LDO、充电 IC）的温限可能更低，实际可用温度范围以开发套件规格书为准"
+  ],
+
+  "programming_interfaces": [
+    "板载 J-Link OB (SWD, 通过 nrfjprog 或 pyOCD 操作)",
+    "USB DFU (按住复位按钮 + IF BOOT 按钮后释放复位, 通过 nRF Connect Programmer 或 nrfutil 烧录)",
+    "外部 SWD (通过 P20 排针连接外置 J-Link / DAP-Link 调试器)"
+  ],
+
+  "metadata": {
+    "author": "司南嵌入式智能体团队",
+    "created": "2026-06-02",
+    "datasheet_url": "https://www.nordicsemi.com/Products/nRF52840",
+    "schematic_url": "https://www.nordicsemi.com/-/media/Software-and-other-downloads/Development-Kits/nRF52840-DK/nRF52840-DK-Hardware-files.zip"
+  }
+}

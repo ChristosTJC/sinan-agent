@@ -18,10 +18,45 @@ import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Iterator, Optional
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
 logger = logging.getLogger(__name__)
+
+
+def normalize_proxy_environment() -> None:
+    """Normalize proxy env vars to schemes accepted by httpx.
+
+    Some desktop proxy tools export ``socks://host:port``. httpx expects
+    explicit SOCKS versions such as ``socks5://`` when SOCKS support is
+    installed, so normalize the common alias before each request. Users also
+    often set ``HTTPS_PROXY=https://127.0.0.1:port`` even though the local
+    proxy listener itself speaks plain HTTP; httpx then tries TLS to the proxy
+    and fails with SSL EOF. Keep this correction scoped to loopback hosts.
+    """
+    for key in (
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "all_proxy",
+    ):
+        value = os.environ.get(key, "")
+        if value.lower().startswith("socks://"):
+            value = "socks5://" + value[len("socks://"):]
+        elif _is_loopback_https_proxy(value):
+            parts = urlsplit(value)
+            value = urlunsplit(("http", parts.netloc, parts.path, parts.query, parts.fragment))
+        os.environ[key] = value
+
+
+def _is_loopback_https_proxy(value: str) -> bool:
+    if not value.lower().startswith("https://"):
+        return False
+    parts = urlsplit(value)
+    return parts.hostname in {"127.0.0.1", "localhost", "::1"}
 
 
 # ---------------------------------------------------------------------------
@@ -204,6 +239,7 @@ class ClaudeClient(LLMClient):
         if claude_tools:
             body["tools"] = claude_tools
 
+        normalize_proxy_environment()
         resp = httpx.post(
             f"{self.base_url}/v1/messages",
             headers=self._build_headers(),
@@ -242,6 +278,7 @@ class ClaudeClient(LLMClient):
         if claude_tools:
             body["tools"] = claude_tools
 
+        normalize_proxy_environment()
         with httpx.stream(
             "POST",
             f"{self.base_url}/v1/messages",
@@ -367,6 +404,7 @@ class BaseOpenAICompatibleClient(LLMClient):
     def chat(self, messages: list[dict], tools: Optional[list[dict]] = None) -> LLMResponse:
         body = self._build_chat_body(messages, tools, stream=False)
 
+        normalize_proxy_environment()
         resp = httpx.post(
             self._get_endpoint(),
             headers=self._build_headers(),
@@ -409,6 +447,7 @@ class BaseOpenAICompatibleClient(LLMClient):
         headers = self._build_headers()
         endpoint = self._get_endpoint()
 
+        normalize_proxy_environment()
         with httpx.stream(
             "POST",
             endpoint,

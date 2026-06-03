@@ -31,6 +31,10 @@ credentials.json
 
 # 本地数据
 .nexus-map/
+.omo/
+
+# 私人计划/规格草稿
+docs/superpowers/
 
 # 系统
 .DS_Store

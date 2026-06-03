@@ -1,6 +1,8 @@
 """Nordic 平台端到端集成测试 — 验证完整开发工作流。"""
 
 import pytest
+
+pytestmark = pytest.mark.integration
 import tempfile
 from pathlib import Path
 from agent.platforms.nordic import NordicPlatform, detect_nrf_variant

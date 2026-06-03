@@ -1,0 +1,21 @@
+name: VL53L0X
+kind: ToF 激光测距
+manufacturer: STMicroelectronics
+protocol: I2C
+i2c_addr: "0x29 (默认, 可通过 API 修改)"
+measurements:
+  - 距离 30-2000mm（黑暗环境/白墙参考板）
+  - 精度 +/-3%（室内典型条件）
+key_registers:
+  "寄存器层说明": "VL53L0X 不推荐直接读写寄存器，应使用 ST 官方 VL53L0X API 库"
+  VHV: "出厂校准值，上电后必须从 NVM 加载并恢复"
+  XTALK: "串扰校准参数，存在 cover glass 时必须重新标定"
+  SPAD: "SPAD 阵列映射，初始化阶段需设置为 API 推荐的参考值"
+  Range_Mode: "API 测距模式: Single（单次）或 Continuous（连续）"
+common_pitfalls:
+  - "必须完成三步校准（RefSPAD 管理→Offset Cal→XTALK Cal）后才能正常测距，否则返回无效距离"
+  - "被测物表面反射率和颜色显著影响精度，深色/低反射面量程大幅缩减"
+  - "室外阳光下不可靠，940nm 环境光干扰严重"
+  - "多传感器同时使用时通过 XSHUT 引脚逐个使能并赋予不同 I2C 地址，避免总线冲突"
+  - "连续模式下 40ms 内连续读取会返回同一缓存值，应用层需做去重或按 timing budget 间隔读取"
+  - "cover glass（保护玻璃）会引入额外串扰路径，必须针对实际装机状态做 XTALK 校准"

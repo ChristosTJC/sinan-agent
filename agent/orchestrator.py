@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -203,7 +204,7 @@ class AgentOrchestrator:
         )
         resp = self._call_llm(prompt)
         try:
-            plan = json.loads(resp)
+            plan = json.loads(_extract_json_payload(resp))
             if isinstance(plan, list):
                 return plan
         except json.JSONDecodeError:
@@ -216,14 +217,51 @@ class AgentOrchestrator:
         plan: list[dict] = []
         sid, lo = 0, user_input.lower()
 
-        # USB/串口
-        if any(kw in lo for kw in ("usb", "串口", "serial", "uart", "端口", "设备")):
+        # USB/串口：优先匹配用户明确提到的设备类型，泛“设备”才用默认扫描。
+        wants_usb = "usb" in lo
+        wants_serial = any(kw in lo for kw in ("串口", "serial", "uart", "端口"))
+        wants_device = "设备" in lo or "device" in lo
+
+        if wants_usb and "scan_usb" in tool_names:
+            sid += 1
+            plan.append({"step_id": sid, "action": "扫描 USB 设备", "tool": "scan_usb",
+                         "args": {}, "expected_outcome": "列出 USB 设备"})
+        if wants_serial and "scan_serial" in tool_names:
+            sid += 1
+            plan.append({"step_id": sid, "action": "扫描串口端口", "tool": "scan_serial",
+                         "args": {}, "expected_outcome": "列出可用串口"})
+        if not (wants_usb or wants_serial) and wants_device:
             for t in ("scan_usb", "scan_serial"):
                 if t in tool_names:
                     sid += 1
                     plan.append({"step_id": sid, "action": "扫描设备", "tool": t,
                                  "args": {}, "expected_outcome": "列出可用设备"})
                     break
+        # 日志诊断：无 LLM 时按平台关键词把原始日志文本交给安全诊断工具。
+        wants_diagnose = any(kw in lo for kw in (
+            "日志", "log", "panic", "崩溃", "hardfault", "fault", "reset", "复位",
+            "guru meditation", "brownout", "assert",
+        ))
+        if wants_diagnose:
+            diagnose_tool = None
+            if "esp32" in lo and "esp32_diagnose_log" in tool_names:
+                diagnose_tool = "esp32_diagnose_log"
+            elif "stm32" in lo and "stm32_diagnose_log" in tool_names:
+                diagnose_tool = "stm32_diagnose_log"
+            elif any(kw in lo for kw in ("nordic", "nrf", "zephyr")) and "nordic_diagnose_log" in tool_names:
+                diagnose_tool = "nordic_diagnose_log"
+            elif "diagnose_log" in tool_names:
+                diagnose_tool = "diagnose_log"
+
+            if diagnose_tool is not None:
+                sid += 1
+                plan.append({
+                    "step_id": sid,
+                    "action": "分析平台日志",
+                    "tool": diagnose_tool,
+                    "args": {"log": user_input},
+                    "expected_outcome": "返回日志诊断摘要和排查建议",
+                })
         # 传感器
         if any(kw in lo for kw in ("传感器", "sensor", "adc", "读取", "采样")) \
                 and "read_sensor" in tool_names:
@@ -242,7 +280,9 @@ class AgentOrchestrator:
             if "flash_firmware" in tool_names:
                 sid += 1
                 plan.append({"step_id": sid, "action": "烧录固件（需确认端口）",
-                             "tool": None, "args": {}, "expected_outcome": "待确认"})
+                             "tool": "flash_firmware",
+                             "args": {"project_path": ".", "port": "", "method": "auto"},
+                             "expected_outcome": "烧录固件或提示缺少端口"})
         # 文件操作
         if any(kw in lo for kw in ("文件", "读", "写", "编辑", "搜索")):
             for t in ("read_file", "grep", "glob", "edit_file", "write_file"):
@@ -315,7 +355,9 @@ class AgentOrchestrator:
                     f"执行结果: {json.dumps(execution, ensure_ascii=False)}\n"
                     "评估是否满足需求，返回: {\"passed\":bool, \"reason\":\"...\"}"
                 )
-                verdict = json.loads(self._call_llm(prompt))
+                verdict = json.loads(_extract_json_payload(self._call_llm(prompt)))
+                if not isinstance(verdict, dict):
+                    verdict = {"passed": True, "reason": "LLM 未返回验证对象，默认通过"}
             except Exception as exc:
                 logger.warning("LLM 验证异常: %s", exc)
                 verdict = {"passed": True, "reason": f"LLM 异常，默认通过: {exc}"}
@@ -412,9 +454,28 @@ class AgentOrchestrator:
     def _call_llm(self, prompt: str) -> str:
         """统一的 LLM 调用入口，兼容 generate / chat / callable 三种接口。"""
         if hasattr(self.llm_client, "generate"):
-            return self.llm_client.generate(prompt)
+            return _coerce_llm_text(self.llm_client.generate(prompt))
         if hasattr(self.llm_client, "chat"):
-            return self.llm_client.chat([{"role": "user", "content": prompt}])
+            return _coerce_llm_text(self.llm_client.chat([{"role": "user", "content": prompt}]))
         if callable(self.llm_client):
-            return self.llm_client(prompt)
+            return _coerce_llm_text(self.llm_client(prompt))
         raise TypeError("llm_client 未提供 generate / chat / callable 接口")
+
+
+def _coerce_llm_text(response: Any) -> str:
+    """Extract text from LLMResponse-like objects or plain strings."""
+    if isinstance(response, str):
+        return response
+    content = getattr(response, "content", None)
+    if isinstance(content, str):
+        return content
+    return str(response)
+
+
+def _extract_json_payload(text: str) -> str:
+    """Return JSON from raw text or a fenced ```json block."""
+    stripped = text.strip()
+    fenced = re.search(r"```(?:json)?\s*(.*?)```", stripped, flags=re.DOTALL | re.IGNORECASE)
+    if fenced:
+        return fenced.group(1).strip()
+    return stripped

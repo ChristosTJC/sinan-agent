@@ -1,0 +1,39 @@
+name: RP2040
+manufacturer: Raspberry Pi
+arch: Dual ARM Cortex-M0+
+max_clock: 133MHz
+flash: 外部 QSPI (最大 16MB)
+ram: 264KB SRAM (6 个独立 bank)
+voltage: 1.8V-3.3V (I/O), 1.1V (core)
+package: QFN56 (7x7mm)
+key_features:
+  - 双核 Cortex-M0+ (SMP 架构, 两个核均可独立运行)
+  - PIO (可编程 I/O): 2 个 block, 各含 4 个状态机, 可自定义协议 (UART/SPI/VGA/WS2812)
+  - 2x UART, 2x SPI, 2x I2C
+  - 16x PWM 通道 (8 个 slice, 每个含 A/B 两路)
+  - USB 1.1 Host/Device (集成的 PHY)
+  - ROSC (环形振荡器, 6-12MHz), 带小数分频 PLL
+  - 8 个 PIO 状态机 (每个 block 4 个, 共享 32 条指令空间)
+  - 30 个 GPIO (QFN56), 4 个 ADC 通道 (12-bit, 500ksps)
+  - 内部温度传感器
+  - 引导 ROM (含 USB 大容量存储和 UF2 支持)
+clock_tree:
+  ROSC: 6-12MHz (环形振荡器, 内部)
+  XOSC: 1-15MHz (外部晶振, 典型 12MHz)
+  PLL SYS: 125MHz default (可升到 133MHz)
+  PLL USB: 48MHz (固定, 供 USB)
+  clk_sys: 系统主时钟 (从 PLL SYS 或 ref 派生)
+  clk_peri: 外设时钟 (与 clk_sys 同频, 可单独分频)
+  clk_usb: 48MHz (PLL USB)
+  clk_adc: 48MHz (PLL USB)
+common_pitfalls:
+  - "RP2040 无内部 Flash, 上电从外部 QSPI Flash 启动; Flash 擦写次数直接影响芯片寿命"
+  - "PIO 需要汇编级编程 (pioasm 汇编器编译 .pio 文件), 不能直接用 C 访问状态机"
+  - "Flash XIP 缓存可能使代码运行时间测量不准确; 做精确计时需禁用缓存或从 SRAM 执行"
+  - "GPIO 输出使能寄存器 (GPIO_OE) 和 pad 控制寄存器 (PADS_BANK0) 是两个独立寄存器, 两者均需配置"
+  - "按住 BOOTSEL 再上电进入 USB 大容量存储模式, 拖入 UF2 文件即可烧录"
+  - "双核互斥: 两个核同时访问同一 SRAM bank 会产生 stall; 关键数据宜分布在不同 bank"
+  - "PLL 超频到 133MHz 以上 (最大约 400MHz) 需相应提高核心电压, 超出规格值时不稳定"
+programming_interfaces:
+  - SWD (通过 Raspberry Pi Debug Probe 或 Pico Probe, 双线 GPIO)
+  - USB bootloader (BOOTSEL 模式, UF2 文件拖拽烧录)

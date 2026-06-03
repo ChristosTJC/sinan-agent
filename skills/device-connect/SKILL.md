@@ -26,10 +26,14 @@ metadata:
 # 列举所有 USB 设备（VID:PID:厂商:产品）
 lsusb
 
-# 列举所有串口设备及其属性
-ls /dev/ttyUSB* /dev/ttyACM* /dev/ttyS* 2>/dev/null
+# 列举 USB 转串口设备（真实开发板通常出现在这些节点）
+ls /dev/ttyUSB* /dev/ttyACM* 2>/dev/null
 ls -l /dev/serial/by-id/ 2>/dev/null   # 稳定设备路径（推荐使用）
 ls -l /dev/serial/by-path/ 2>/dev/null  # 按物理端口路径
+
+# 平台串口（ttyS*/ttyAMA*）通常是主板或 SoC 片上 UART，不一定是外接设备
+# 仅当上述 USB 路径无结果时才作为备选检查
+ls /dev/ttyS* /dev/ttyAMA* 2>/dev/null
 
 # 获取 USB 设备详细信息
 udevadm info --query=all --name=/dev/ttyUSB0

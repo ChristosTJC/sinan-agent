@@ -1,0 +1,149 @@
+{
+  "schema_version": "1.0.0",
+  "board_id": "arduino_uno_r3",
+  "display_name": "Arduino Uno R3",
+  "description": "Arduino Uno R3 是基于 ATmega328P 的开源开发板，全球最流行的入门级嵌入式平台。板载 ATmega16U2 实现 USB 转串口，兼容海量扩展板和 Arduino 库生态。适用于创客原型、教育、传感器采集和简单控制任务。",
+
+  "mcu": {
+    "model": "ATmega328P",
+    "manufacturer": "Microchip (原 Atmel)",
+    "arch": "AVR (8-bit RISC)",
+    "clock": "16MHz",
+    "flash": "32KB (含 0.5KB bootloader，实际可用 31.5KB)",
+    "ram": "2KB SRAM",
+    "eeprom": "1KB EEPROM",
+    "voltage": "5V",
+    "cores": 1
+  },
+
+  "ports": [
+    {
+      "name": "UART (USB 串口)",
+      "type": "serial",
+      "pins": {
+        "TX": "D1 (PD1)",
+        "RX": "D0 (PD0)"
+      },
+      "connector": "USB-B (通过 ATmega16U2 桥接)",
+      "notes": "硬件 UART（USART0）与 ATmega16U2 协处理器连接，实现 USB 转串口。PC 端枚举为标准 COM 口，波特率可配。D0/D1 同时通过排针引出——在 USB 串口通信期间不要将这两个引脚用作普通 IO"
+    },
+    {
+      "name": "I2C (TWI)",
+      "type": "i2c",
+      "pins": {
+        "SDA": "A4 (PC4)",
+        "SCL": "A5 (PC5)"
+      },
+      "connector": "Dupont 2.54mm 排针",
+      "notes": "I2C 接口（ATmega328P 中称为 TWI）。使用 Arduino Wire 库操作，默认时钟 100 kHz。需外接 4.7kΩ 上拉电阻到 5V。A4/A5 也可作为模拟输入 (ADC4/ADC5)，但不能同时使用 I2C 和模拟读取"
+    },
+    {
+      "name": "SPI",
+      "type": "spi",
+      "pins": {
+        "MOSI": "D11 (PB3)",
+        "MISO": "D12 (PB4)",
+        "SCK": "D13 (PB5)",
+        "SS": "D10 (PB2)"
+      },
+      "connector": "Dupont 2.54mm 排针 / ICSP 6-pin 头",
+      "notes": "SPI 接口，与 ICSP 编程头共享引脚。使用 Arduino SPI 库操作。注意 D13 (SCK) 与板载 LED 共用——用作 SPI SCK 时 LED 会随时钟闪烁，不影响通信但要注意"
+    },
+    {
+      "name": "ICSP 编程头",
+      "type": "spi",
+      "pins": {
+        "MOSI": "D11 (PB3)",
+        "MISO": "D12 (PB4)",
+        "SCK": "D13 (PB5)",
+        "RESET": "nRESET",
+        "VCC": "5V",
+        "GND": "GND"
+      },
+      "connector": "2x3 pin 排针 (6-pin ISP)",
+      "notes": "ICSP (In-Circuit Serial Programming) 6-pin 编程头，与 SPI 引脚共享。可通过 AVR ISP 编程器（如 USBasp、Atmel-ICE）直接烧录，也可烧录新的 bootloader"
+    },
+    {
+      "name": "power_5v",
+      "type": "power",
+      "pins": {
+        "5V": "5V",
+        "GND": "GND"
+      },
+      "connector": "Dupont 2.54mm 排针 / USB-B / DC 插孔",
+      "notes": "5V 电源轨，通过 USB-B 接口或 DC 插孔（7-12V 输入，经 5V LDO 降压）供电。5V 引脚最大输出电流约 500 mA（取决于供电方式和 LDO 散热）"
+    },
+    {
+      "name": "power_3v3",
+      "type": "power",
+      "pins": {
+        "3V3": "3.3V",
+        "GND": "GND"
+      },
+      "connector": "Dupont 2.54mm 排针",
+      "notes": "3.3V 低压电源轨，由板上 LDO（LP2985-3.3 或类似）从 5V 降压产生。最大输出仅 50 mA——不能给外部耗电模块（如 ESP8266 WiFi 模组）供电。3.3V 传感器（如某些 I2C 外设）需自行确认功耗在 50 mA 以内"
+    }
+  ],
+
+  "peripherals": [
+    {
+      "name": "ATmega16U2 USB 协处理器",
+      "kind": "interface",
+      "model": "ATmega16U2 (或 CH340G 在兼容板中)",
+      "protocol": "UART",
+      "pins": {
+        "TX": "与 ATmega328P RX (D0) 连接",
+        "RX": "与 ATmega328P TX (D1) 连接"
+      },
+      "notes": "ATmega16U2 作为 USB 转串口协处理器，负责在 USB 和 TTL 串口之间桥接。固件可更新以改变 USB 设备描述（如改为 MIDI、HID 或其他设备类型）。兼容版 Arduino Uno 可能使用 CH340G/USB 芯片替代，驱动需求不同"
+    },
+    {
+      "name": "板载 LED",
+      "kind": "led",
+      "pins": {
+        "LED_BUILTIN": "D13 (PB5)"
+      },
+      "notes": "板载 LED 连接 D13，串有 1kΩ 限流电阻。高电平点亮。与 SPI SCK 共用引脚——使用 SPI 时 LED 会随时钟信号闪烁。用作数字输入时，1kΩ 上拉电阻会影响外部电路的阻抗匹配，需考虑此因素"
+    },
+    {
+      "name": "复位按钮",
+      "kind": "button",
+      "pins": {
+        "RESET": "nRESET (PC6)"
+      },
+      "notes": "按下将 ATmega328P 复位引脚拉低，触发系统复位。复位后 bootloader 等待约 1-2 秒再跳转用户程序。可通过将 100nF 电容接在 RESET 和 GND 之间禁用自动复位（用于某些需要手动复位的场景）"
+    }
+  ],
+
+  "common_pitfalls": [
+    "D0/D1 是硬件 UART 引脚，在 USB 串口通信期间不要用作普通 IO。如果在 sketch 中对 D0/D1 做 pinMode/digitalWrite，将与 USB 串口通信冲突，导致串口监视器无法正常输出或输出乱码",
+    "D13 板载 LED 有 1kΩ 电阻。当 D13 用作数字输入时，这个上拉电阻会影响外部电路的阻抗——例如外部是 10kΩ 下拉电阻时，引脚电压约为 5V × 1k/(10k+1k) ≈ 0.45V，即读取到的电平会偏离预期",
+    "A4/A5 是 I2C 默认引脚（SDA/SCL）。虽然它们在引脚编号中属于模拟输入 (A4/A5)，但如果同时用 Wire.begin() 启用 I2C 又用 analogRead(A4/A5)，I2C 总线会异常。使用前先确定用途",
+    "3.3V 输出仅 50mA。这是 Arduino Uno 最容易被忽视的限制——ESP8266/ESP32 WiFi 模块峰值电流达 300-500mA，直接从 Uno 3.3V 引脚取电会导致 3.3V 掉压、LDO 过热甚至板卡复位。务必使用外部独立 3.3V 电源给大功耗模块供电",
+    "ATmega328P 的 bootloader（Optiboot）占用 0.5KB Flash，位于 0x7E00-0x7FFF。实际用户可用 Flash 为 31.5KB。编译时如果代码超过 31.5KB，Arduino IDE 会报 'Sketch too big' 但实际剩余空间可能足够——可通过 ISP 烧录跳过 bootloader 直接使用全部 32KB",
+    "每次上电或复位后，bootloader 等待 1-2 秒才跳转用户程序。这段时间内板载 LED (D13) 会闪烁以指示 bootloader 运行中。如果应用需要极速启动（如电机控制的紧急停止），这一延时可能是问题的来源——可通过 ISP 烧录跳过 bootloader",
+    "ATmega328P 没有硬件 FPU（浮点运算单元）。float/double 的操作全部由 AVR LibC 库通过纯软件模拟完成，速度极慢且占 Flash 空间（一个 printf(\"%f\") 可能增加约 2KB 代码体积）。在循环或中断中使用浮点运算会造成明显的性能问题。尽量使用定点数、整数运算或预计算查表替代",
+    "Arduino 的 millis() 返回 unsigned long 变量，约 49.7 天后会溢出归零。长时间运行的应用需处理此溢出（通过减法比较时间差而非直接比较时间戳）"
+  ],
+
+  "safety_notes": [
+    "Arduino Uno R3 所有 GPIO 均为 5V 电平。连接 3.3V 传感器时务必使用电平转换器（如 TXS0108E 或电阻分压网络），否则可能永久损坏传感器——尤其是 I2C 和 SPI 设备",
+    "所有 I/O 引脚合计最大电流不超过 200 mA（ATmega328P 芯片封装限制）。每个引脚建议不超过 20 mA。驱动伺服电机、继电器、大功率 LED 时必须使用外部驱动电路（MOS 管、继电器模块等），不可从 GPIO 直接取电",
+    "5V 引脚通过 USB 或 DC 插孔供电，最大输出约 500 mA（USB 模式）。通过 DC 插孔供电时，输入电压建议 7-12V，板载 LDO (NCP1117ST50T3G 或类似) 降压。输入电压越高 LDO 发热越大——12V 输入时 LDO 需要耗散 (12-5)×Iout 的功率，大电流下可能过热保护",
+    "反向供电保护：板载 Polyfuse（自恢复保险丝）防止 USB VBUS 反向倒灌。但 Polyfuse 反应较慢，如果短时间内接入反向电压，板卡仍可能受损。请始终确认正负极正确",
+    "静电防护：ATmega328P 无 ESD 保护二极管（除部分引脚外）。焊接或接线前断开电源并触摸接地金属释放静电"
+  ],
+
+  "programming_interfaces": [
+    "USB (通过 Arduino IDE / arduino-cli / avrdude, 使用 bootloader 自动复位机制)",
+    "ICSP (通过 AVR ISP 编程器, 如 USBasp / Atmel-ICE / Arduino as ISP)",
+    "UART bootloader (STK500 协议, 通过 D0/D1, 使用 Optiboot)"
+  ],
+
+  "metadata": {
+    "author": "司南嵌入式智能体团队",
+    "created": "2026-06-02",
+    "datasheet_url": "https://ww1.microchip.com/downloads/en/DeviceDoc/ATmega48A-PA-88A-PA-168A-PA-328-P-DS-DS40002061B.pdf",
+    "schematic_url": "https://www.arduino.cc/en/uploads/Main/Arduino_Uno_Rev3-schematic.pdf"
+  }
+}

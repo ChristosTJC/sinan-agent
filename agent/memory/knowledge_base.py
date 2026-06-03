@@ -94,10 +94,9 @@ class KnowledgeBase:
 
     @staticmethod
     def _infer_doc_type(filepath: Path) -> DocumentType:
-        """从路径推断文档类型，与 KnowledgeIndex._infer_doc_type 逻辑一致。"""
         parts = filepath.parts
         for fragment, dt in _DIR_TO_DOC.items():
-            if fragment in parts:
+            if any(fragment in p for p in parts):
                 return dt
         return DocumentType.GENERAL
 
@@ -394,7 +393,7 @@ class KnowledgeBase:
             cat_dir = d / category
             if not cat_dir.is_dir():
                 continue
-            for suffix in self._KNOWLEDGE_SUFFIXES:
+            for suffix in _KNOWN_SUFFIXES:
                 fp = cat_dir / f"{entry_name}{suffix}"
                 if fp.is_file():
                     return {

@@ -230,6 +230,45 @@ def scan_usb_devices() -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# 串口端口分类
+# ---------------------------------------------------------------------------
+
+# 端口类型常量
+_PORT_TYPE_USB_SERIAL = "usb-serial"        # USB 转串口设备（ttyUSB/ttyACM/cu.usb）
+_PORT_TYPE_PLATFORM_SERIAL = "platform-serial"  # 主板/SoC 片上串口（ttyS/ttyAMA）
+_PORT_TYPE_UNKNOWN = "unknown"              # 无法分类
+
+# 端口模式 → 分类规则
+_PORT_TYPE_RULES: dict[str, tuple[str, bool]] = {
+    "ttyUSB":   (_PORT_TYPE_USB_SERIAL, True),       # USB-UART 桥接（FT232/CH340/CP210x）
+    "ttyACM":   (_PORT_TYPE_USB_SERIAL, True),       # CDC-ACM 抽象控制模型（STM32 VCP, Arduino Due）
+    "tty.usb":  (_PORT_TYPE_USB_SERIAL, True),       # macOS USB 串口
+    "cu.usb":   (_PORT_TYPE_USB_SERIAL, True),       # macOS Call-Up 串口
+    "ttyS":     (_PORT_TYPE_PLATFORM_SERIAL, False), # 8250/16550 UART（主板/SoC 片上串口，非 USB 设备）
+    "ttyAMA":   (_PORT_TYPE_PLATFORM_SERIAL, False), # ARM AMBA PL011（树莓派等 ARM 板卡片上串口）
+}
+
+
+def _classify_port(port_path: str) -> tuple[str, bool]:
+    """根据设备节点名分类端口类型。
+
+    Args:
+        port_path: 设备路径，如 ``/dev/ttyUSB0``。
+
+    Returns:
+        ``(port_type, is_hardware)`` 元组。
+        - ``port_type``: ``"usb-serial"`` / ``"platform-serial"`` / ``"unknown"``
+        - ``is_hardware``: True 表示高置信度物理外接设备（USB 转串口），
+          False 表示可能是系统虚拟串口或内核控制台。
+    """
+    basename = os.path.basename(port_path)
+    for prefix, (ptype, is_hw) in _PORT_TYPE_RULES.items():
+        if basename.startswith(prefix):
+            return ptype, is_hw
+    return _PORT_TYPE_UNKNOWN, False
+
+
+# ---------------------------------------------------------------------------
 # 串口端口扫描
 # ---------------------------------------------------------------------------
 
@@ -250,11 +289,15 @@ def _try_pyserial_ports() -> list[dict]:
 
     ports: list[dict] = []
     for port_info in serial.tools.list_ports.comports():
+        port_type, is_hardware = _classify_port(port_info.device)
         ports.append({
             "port": port_info.device,
             "device": port_info.device,
             "description": port_info.description,
             "hwid": port_info.hwid or "",
+            "port_type": port_type,
+            "is_hardware": is_hardware,
+            "source": "pyserial",
         })
     return ports
 
@@ -262,16 +305,21 @@ def _try_pyserial_ports() -> list[dict]:
 def _try_glob_ports() -> list[dict]:
     """通过扫描 ``/dev`` 下的标准串口设备节点发现端口。
 
+    作为 pyserial 不可用时的 fallback。会区分 USB 转串口设备
+    （ttyUSB/ttyACM/cu.usb）和平台片上串口（ttyS/ttyAMA），
+    并通过 ``is_hardware`` 标记帮助调用方判断哪些可能是真实板卡。
+
     Returns:
         端口信息列表。
     """
+    # 优先级排序：USB 设备在前，平台串口在后
     patterns = [
         "/dev/ttyUSB*",
         "/dev/ttyACM*",
-        "/dev/ttyS*",
-        "/dev/ttyAMA*",
         "/dev/tty.usb*",
         "/dev/cu.usb*",
+        "/dev/ttyS*",         # 平台串口 — 通常为系统控制台，非外接设备
+        "/dev/ttyAMA*",       # ARM 板载串口 — 通常为内核调试口
     ]
 
     ports: list[dict] = []
@@ -284,11 +332,13 @@ def _try_glob_ports() -> list[dict]:
                 continue
             seen.add(port)
 
+            # 端口分类
+            port_type, is_hardware = _classify_port(port)
+
             # 尝试读取设备符号链接信息
             description = ""
             hwid = ""
             try:
-                # 检查是否为符号链接
                 if path.is_symlink():
                     description = f"symlink → {os.readlink(port)}"
             except OSError:
@@ -299,6 +349,9 @@ def _try_glob_ports() -> list[dict]:
                 "device": port,
                 "description": description,
                 "hwid": hwid,
+                "port_type": port_type,
+                "is_hardware": is_hardware,
+                "source": "glob",
             })
 
     return ports
@@ -319,7 +372,16 @@ def scan_serial_ports() -> list[dict]:
                 "device": str,      # 同上
                 "description": str, # 描述信息（pyserial 提供时更详细）
                 "hwid": str,        # 硬件 ID（pyserial 提供时更详细）
+                "port_type": str,   # 端口类型: "usb-serial" / "platform-serial" / "unknown"
+                "is_hardware": bool,# True=高置信度外接设备（USB转串口），False=可能为系统虚拟串口
+                "source": str,      # 数据来源: "pyserial" / "glob"
             }
+
+        .. note::
+
+            ``is_hardware=False`` 不意味着端口无效，只说明通过设备节点名
+            无法确定是否为真实板卡。需结合 ``udevadm info`` 或 port_type
+            为 ``usb-serial`` 时进一步确认。
 
         无可用端口或扫描失败时返回空列表。
     """

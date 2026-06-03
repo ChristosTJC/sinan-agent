@@ -1,0 +1,204 @@
+{
+  "schema_version": "1.0.0",
+  "board_id": "rp2040_pico",
+  "display_name": "Raspberry Pi Pico",
+  "description": "Raspberry Pi Pico 是树莓派基金会推出的低成本微控制器开发板，搭载自研 RP2040 双核 Cortex-M0+ 芯片。板载 2MB QSPI Flash、264KB SRAM，支持 MicroPython 和 C/C++ 开发。独特的 PIO (可编程 I/O) 子系统可实现自定义数字接口协议，适用于实时控制、传感器采集、信号生成等场景。",
+
+  "mcu": {
+    "model": "RP2040",
+    "manufacturer": "Raspberry Pi",
+    "arch": "Dual ARM Cortex-M0+",
+    "clock": "133MHz",
+    "flash": "2MB (外部 QSPI)",
+    "ram": "264KB SRAM (6 个独立 bank)",
+    "voltage": "1.8V-5.5V",
+    "cores": 2
+  },
+
+  "ports": [
+    {
+      "name": "USB",
+      "type": "usb",
+      "pins": {
+        "USB_DM": "USB_DM",
+        "USB_DP": "USB_DP"
+      },
+      "connector": "Micro-USB",
+      "notes": "USB 1.1 全速 (12 Mbps)，支持 Device 和 Host 模式。Device 模式下可通过 TinyUSB 实现 CDC-ACM（串口）、HID、MSC 等多种设备类。Host 模式需外部 5V 供电，不可仅通过 VBUS 供电"
+    },
+    {
+      "name": "UART0 (默认串口)",
+      "type": "serial",
+      "pins": {
+        "TX": "GP0",
+        "RX": "GP1"
+      },
+      "connector": "Dupont 2.54mm 排针",
+      "notes": "UART0 是 Pico 的默认硬件串口。RP2040 的 UART 引脚通过 GPIO Mux 任意映射，GP0/GP1 为 pico-sdk 默认分配。常用波特率 115200。注意：此 UART 与 USB CDC-ACM 串口是不同的独立通道，通常开发时优先使用 USB 串口用于日志输出"
+    },
+    {
+      "name": "UART1",
+      "type": "serial",
+      "pins": {
+        "TX": "GP4",
+        "RX": "GP5"
+      },
+      "connector": "Dupont 2.54mm 排针",
+      "notes": "UART1，GP4/GP5 为 pico-sdk 默认分配。也可通过 GPIO Mux 映射到其他引脚。RP2040 总共 2 个 UART 外设"
+    },
+    {
+      "name": "I2C0",
+      "type": "i2c",
+      "pins": {
+        "SDA": "GP4",
+        "SCL": "GP5"
+      },
+      "connector": "Dupont 2.54mm 排针",
+      "notes": "I2C0 外设，GP4/GP5 或 GP8/GP9 为 pico-sdk 推荐引脚。RP2040 的 I2C 引脚可任意映射。需外接 4.7kΩ 上拉电阻到 3.3V。注意：GP4/GP5 同时是 UART1 默认引脚，使用时勿冲突"
+    },
+    {
+      "name": "I2C1",
+      "type": "i2c",
+      "pins": {
+        "SDA": "GP2",
+        "SCL": "GP3"
+      },
+      "connector": "Dupont 2.54mm 排针",
+      "notes": "I2C1 外设，GP2/GP3 为 pico-sdk 推荐引脚。RP2040 总共 2 个 I2C 外设"
+    },
+    {
+      "name": "SPI0",
+      "type": "spi",
+      "pins": {
+        "RX (MISO)": "GP4",
+        "CSn": "GP5",
+        "SCK": "GP2",
+        "TX (MOSI)": "GP3"
+      },
+      "connector": "Dupont 2.54mm 排针",
+      "notes": "SPI0 外设，GP2-GP5 为 pico-sdk 默认分配。注意：这些引脚同时与 I2C1 和 UART1 默认引脚重叠，实际使用时需根据工程需求分配"
+    },
+    {
+      "name": "SPI1",
+      "type": "spi",
+      "pins": {
+        "RX (MISO)": "GP12",
+        "CSn": "GP13",
+        "SCK": "GP10",
+        "TX (MOSI)": "GP11"
+      },
+      "connector": "Dupont 2.54mm 排针",
+      "notes": "SPI1 外设，GP10-GP13 为 pico-sdk 默认分配。RP2040 总共 2 个 SPI 外设"
+    },
+    {
+      "name": "SWD 调试接口",
+      "type": "swd",
+      "pins": {
+        "SWCLK": "SWCLK",
+        "SWDIO": "SWDIO"
+      },
+      "connector": "3-pin JST SH 1.0mm (板边焊盘)",
+      "notes": "SWD 调试和烧录接口，通过板边 3-pin 焊盘连接。使用 Raspberry Pi Debug Probe 或其他 CMSIS-DAP 兼容调试器。也支持将另一个 Pico 作为调试探针（Picoprobe 固件）"
+    },
+    {
+      "name": "power_VBUS",
+      "type": "power",
+      "pins": {
+        "VBUS": "5V",
+        "GND": "GND"
+      },
+      "connector": "Micro-USB",
+      "notes": "USB 供电 5V 输入。经板载开关电源（SMPS）降压至 3.3V。VBUS 同时引出到排针（引脚 40），可供外部电路使用——但电流受限于 USB 端口（通常 500 mA）"
+    },
+    {
+      "name": "power_VSYS",
+      "type": "power",
+      "pins": {
+        "VSYS": "1.8V-5.5V",
+        "GND": "GND"
+      },
+      "connector": "Dupont 2.54mm 排针（引脚 39）",
+      "notes": "外部电源输入（1.8V-5.5V），经板载 SMPS 降压至 3.3V。可用于电池供电场景（如 2 节 AA 电池或单节 LiPo）。输入电压高于 3.3V 时 SMPS 降压；低于 3.3V 时 SMPS 旁路，直接将 VSYS 输出电压。注意：同时通过 USB (VBUS) 和 VSYS 供电时，二者通过肖特基二极管隔离，由较高电压侧供电"
+    },
+    {
+      "name": "3V3_EN",
+      "type": "power",
+      "pins": {
+        "3V3_EN": "3V3_EN"
+      },
+      "connector": "Dupont 2.54mm 排针（引脚 37）",
+      "notes": "板载 3.3V SMPS 使能引脚。默认通过板载上拉电阻使能，SMPS 正常输出 3.3V。将 3V3_EN 拉低可关闭 3.3V 输出（芯片掉电），用于超低功耗休眠——但注意失电后所有 GPIO 状态丢失，唤醒需重新初始化"
+    }
+  ],
+
+  "peripherals": [
+    {
+      "name": "板载 LED",
+      "kind": "led",
+      "pins": {
+        "LED": "GP25"
+      },
+      "notes": "板载绿色 LED，高电平点亮。GP25 连接到 RP2040 的片上 LED 引脚，经限流电阻驱动。使用 PIO 或普通 GPIO 驱动均可。在 pico-sdk 中通过 gpio_init(25) 初始化，gpio_put(25, 1) 点亮"
+    },
+    {
+      "name": "BOOTSEL 按钮",
+      "kind": "button",
+      "pins": {
+        "BOOTSEL": "BOOTSEL (QSPI 的 CS 引脚)"
+      },
+      "notes": "BOOTSEL 按钮是实现固件烧录的核心机制。上电时按下 BOOTSEL，RP2040 的 bootrom 检测到后进入 USB 大容量存储模式——在 PC 上枚举为一个 USB 驱动器，将 .uf2 格式固件拖入即可自动烧录。不按下时正常运行用户程序。也可在固件中读取 BOOTSEL 按钮状态作为运行时输入（通常用作多功能按键）"
+    },
+    {
+      "name": "12MHz 晶振",
+      "kind": "interface",
+      "model": "12MHz 无源晶振",
+      "pins": {
+        "XIN": "XIN",
+        "XOUT": "XOUT"
+      },
+      "notes": "板载 12MHz 晶振提供 RP2040 的参考时钟。芯片内部 PLL 将 12MHz 倍频到 133MHz 系统时钟。精度 ±30ppm（典型），满足 USB 通信的时钟精度要求（USB 全速需 ±2500ppm 以内）"
+    },
+    {
+      "name": "SMPS 开关电源",
+      "kind": "power",
+      "model": "RT6150B (或兼容型号)",
+      "pins": {
+        "VIN": "VBUS 或 VSYS",
+        "VOUT": "3.3V"
+      },
+      "notes": "板载高效开关电源（buck-boost SMPS），将 VBUS(5V) 或 VSYS(1.8V-5.5V) 降压至 3.3V。效率约 85-90%，比线性 LDO 明显省电。但 SMPS 的开关纹波（约 20-50mVp-p）可能影响 ADC 测量精度——高精度模拟测量场景下考虑用板外低噪声 LDO 供电或对 ADC 输入端加额外滤波"
+    }
+  ],
+
+  "common_pitfalls": [
+    "上电时按下 BOOTSEL 进入 USB 大容量存储模式（固件烧录模式），不会执行用户程序。这是 Pico 最核心的固件烧录机制——不需要任何外部编程器。松开 BOOTSEL 后正常复位即可运行用户程序。如果上电时意外按住 BOOTSEL，Pico 不会运行你的代码，表现为'程序没反应'",
+    "板载 SMPS 节省功耗但纹波可能影响 ADC 精度。RP2040 的 ADC 为 12 位 SAR 型（ENOB 约 9-10 位），SMPS 的 20-50mV 开关纹波耦合到模拟信号路径后，噪声会增加 LSB 抖动。高精度测量建议：使用外部低噪声基准电压（如 REF3033）给 VREF 供电；ADC 输入端加 RC 低通滤波（100Ω + 100nF）；多次采样取平均",
+    "PIO (Programmable I/O) 编程用汇编语言而非 C/C++。PIO 有专用的 9 条指令集（PIO ASM），通过 .pio 文件编写，用 pioasm 编译为二进制。PIO 的状态机一共只有 2×4=8 个（2 个 PIO block × 4 个 state machine），每个 SM 有 32 字的指令内存。复杂协议可能超出单个 SM 的指令容量，需要拆分到多个 SM",
+    "双核（Cortex-M0+ × 2）的第二个核 (core1) 默认关闭。需通过 multicore_launch_core1() 显式启动。两个核共享全部 264KB SRAM，但无硬件缓存一致性机制——core0 和 core1 之间的共享数据需通过原子操作（如 spin_lock）或专门的 FIFO（sio_hw->fifo）同步",
+    "GPIO 引脚可任意映射（通过 GPIO Mux），无固定外设功能引脚。这是 RP2040 最大的灵活性也是最大的坑——I2C/SPI/UART 外设与 GPIO 之间没有一个 '固定映射表'，一切由软件配置。不同 SDK 或不同版本的 pico-sdk 默认引脚可能不同，移植代码时务必检查 pin 映射配置",
+    "USB Host 模式需外部 5V 供电（不可用 VBUS）。VBUS 在 Host 模式下需要由 Pico 对外输出 5V 给 USB 设备供电，但 VBUS 引脚在正常 USB Device 模式下是输入端。需外接 5V 电源到 VBUS 排针，或将 VSYS 接外部 5V 以便通过内部二极管反向给 VBUS 供电——Pico 官方文档对此有详细说明",
+    "Pico 没有内置 RTC 电池备份功能。虽然 RP2040 有 RTC 外设（通过定时器实现），但失电后时间会丢失。如果应用需要掉电保持时间，需外接 RTC 模块（如 DS3231）或使用外部电池供电（不断电）"
+  ],
+
+  "safety_notes": [
+    "RP2040 所有 GPIO 为 3.3V 电平，非 5V tolerant —— 绝对不可直接输入 5V 信号，会永久损坏芯片。5V 传感器或模块必须在引脚前加电平转换器（如 TXS0108E、电压分压电阻等）",
+    "每个 GPIO 最大驱动电流为 12 mA（source/sink），总 GPIO 电流有芯片封装限制。驱动 LED、小型电机等负载时务必通过 MOS 管或驱动 IC，不可从 GPIO 直接取电",
+    "VSYS 输入电压范围 1.8V-5.5V，但连接 USB 时 VBUS 为 5V。如果同时使用 VBUS (USB) 和 VSYS 供电，二者通过肖特基二极管自动选择较高电压——这不是问题，但需注意如果 VSYS 接入高压（>5.5V），可能击穿二极管或烧毁 SMPS",
+    "工作温度范围：-20°C 至 +85°C（Pico 板卡层级推荐）。RP2040 芯片本身支持 -40°C 至 +85°C，但板载器件（SMPS IC、Flash 芯片）的温限可能更低",
+    "3.3V 输出由板载 SMPS 提供，最大输出电流约 300 mA（取决于输入电压和散热）。若外部传感器从 3V3 排针取电，务必确认总电流在此范围内"
+  ],
+
+  "programming_interfaces": [
+    "USB bootloader (BOOTSEL 模式, UF2 格式固件, 拖拽烧录无需任何外部工具)",
+    "SWD (通过 Raspberry Pi Debug Probe、Picoprobe 或任何 CMSIS-DAP 兼容调试器, 也可用另一个 Pico 充当调试探针)",
+    "C-SDK (pico-sdk + CMake + GCC ARM Embedded Toolchain)",
+    "MicroPython / CircuitPython (通过 UF2 烧录 MicroPython 解释器后, 可通过 USB 串口 REPL 交互)"
+  ],
+
+  "metadata": {
+    "author": "司南嵌入式智能体团队",
+    "created": "2026-06-02",
+    "datasheet_url": "https://datasheets.raspberrypi.com/rp2040/rp2040-datasheet.pdf",
+    "schematic_url": "https://datasheets.raspberrypi.com/pico/pico-datasheet.pdf"
+  }
+}

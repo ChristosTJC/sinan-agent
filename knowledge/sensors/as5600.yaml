@@ -1,0 +1,27 @@
+name: AS5600
+kind: 磁编码器（非接触旋转角度传感器）
+manufacturer: ams OSRAM
+protocol: I2C
+i2c_addr: "0x36"
+measurements:
+  - 角度 0-360° (12-bit 分辨率, 4096 steps)
+key_registers:
+  ZMCO: "0x00 (烧录次数计数器, bit 0: 已烧录至少 1 次, bit 1: 已烧录至少 2 次, bit 2: 已烧录至少 3 次)"
+  ZPOS: "0x01-0x02 (起始角度, 12-bit, LSB 在低字节)"
+  MPOS: "0x03-0x04 (停止角度, 12-bit)"
+  MANG: "0x05-0x06 (最大角度范围, 12-bit)"
+  CONF: "0x07-0x08 (配置寄存器: bit 10-8 PM[功率模式], bit 5-4 HYST[迟滞], bit 3-2 OUTS[输出模式], bit 1 PWMF, bit 0 SF)"
+  RAW_ANGLE: "0x0C-0x0D (原始未补偿角度, 12-bit)"
+  ANGLE: "0x0E-0x0F (补偿后角度输出, 12-bit)"
+  STATUS: "0x0B (bit 5: MD[磁铁检测], bit 4: ML[磁铁过弱], bit 3: MH[磁铁过强])"
+  AGC: "0x1A (自动增益控制值, 0-255)"
+  MAGNITUDE: "0x1B-0x1C (磁场强度, 12-bit)"
+  BURN: "0xFF (烧录命令: 0x01 烧录角度, 0x11 烧录角度+配置, 0x10 烧录配置)"
+common_pitfalls:
+  - "径向磁铁必须正对芯片中心，偏轴安装会引入显著的非线性角度误差"
+  - "磁铁与芯片间距需严格控制在 0.5-3mm 范围内，过大导致 AGC 增益不足磁场过弱，过小可能饱和"
+  - "上电后 AGC 自动调整需要稳定时间，初始几次读数可能不稳定"
+  - "ZPOS/MPOS 可通过 BURN 命令永久烧录到 OTP，但烧录次数有限（ZMCO 寄存器可查询已烧录次数）"
+  - "烧录配置后需重新上电才能使新配置生效"
+  - "输出模式通过 CONF 寄存器 OUTS 位选择：I2C 数字读取、PWM 输出、或模拟电压输出"
+  - "STATUS 寄存器可在运行时监控磁铁状态（过强/过弱/缺失），建议定期轮询"

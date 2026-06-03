@@ -1,0 +1,67 @@
+category: nRF5 SDK 常见错误码
+errors:
+  NRF_SUCCESS:
+    value: "0x00"
+    meaning: 操作成功
+  NRF_ERROR_SVC_HANDLER_MISSING:
+    value: "0x01"
+    meaning: SoftDevice 未使能或未注册回调
+  NRF_ERROR_SOFTDEVICE_NOT_ENABLED:
+    value: "0x02"
+    meaning: 使用协议栈 API 前未使能 SoftDevice
+  NRF_ERROR_INTERNAL:
+    value: "0x03"
+    meaning: 内部错误
+  NRF_ERROR_NO_MEM:
+    value: "0x04"
+    meaning: 内存不足
+    common_causes:
+      - "协议栈 Timeslot 请求内存不足"
+      - "应用层 pool 耗尽"
+  NRF_ERROR_NOT_FOUND:
+    value: "0x05"
+    meaning: 资源未找到
+  NRF_ERROR_NOT_SUPPORTED:
+    value: "0x06"
+    meaning: 功能不支持
+  NRF_ERROR_INVALID_PARAM:
+    value: "0x07"
+    meaning: 参数无效
+  NRF_ERROR_INVALID_STATE:
+    value: "0x08"
+    meaning: SoftDevice 状态不允许此操作
+  NRF_ERROR_INVALID_LENGTH:
+    value: "0x09"
+    meaning: 缓冲区长度无效
+  NRF_ERROR_INVALID_FLAGS:
+    value: "0x0A"
+    meaning: 标志位无效
+  NRF_ERROR_INVALID_DATA:
+    value: "0x0B"
+    meaning: 数据无效
+  NRF_ERROR_DATA_SIZE:
+    value: "0x0C"
+    meaning: 数据大小不匹配
+  NRF_ERROR_TIMEOUT:
+    value: "0x0D"
+    meaning: 操作超时
+  NRF_ERROR_NULL:
+    value: "0x0E"
+    meaning: NULL 指针
+  NRF_ERROR_FORBIDDEN:
+    value: "0x0F"
+    meaning: 操作被禁止
+  NRF_ERROR_INVALID_ADDR:
+    value: "0x10"
+    meaning: 地址无效
+  NRF_ERROR_BUSY:
+    value: "0x11"
+    meaning: 外设忙
+  HardFault_SoftDevice:
+    meaning: 协议栈异常（HardFault / NRF_FAULT_ID_SD_ASSERT / NRF_FAULT_ID_APP_MEMACC）
+    common_causes:
+      - "中断优先级设置错误（应用中断优先级不能高于协议栈）"
+      - "RAM 起始地址配置不对"
+      - "SoftDevice RAM 预留不足"
+      - "APP 和协议栈的内存区域重叠"
+      - "Timeslot 中调用了阻塞 API"

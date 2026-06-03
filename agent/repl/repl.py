@@ -520,30 +520,36 @@ class SinanREPL:
     def _switch_model(self, args: str, thinking_level: str = "off") -> str:
         """执行模型切换。thinking 机制根据模型名自动判定。"""
         parts = args.split(None, 1)
-        if len(parts) == 1:
-            model_name = parts[0]
-            new_provider = self._detect_provider_for_model(model_name)
-        else:
-            new_provider = parts[0]
-            model_name = parts[1]
 
         try:
             settings = apply_settings()
             model_config = get_model_config(settings)
+            available = model_config.get("availableModels", [])
+            if len(parts) == 1:
+                model_name = parts[0]
+                new_provider = self._provider_for_configured_model(model_name, available)
+                if not new_provider:
+                    new_provider = self._detect_provider_for_model(model_name)
+            else:
+                new_provider = parts[0]
+                model_name = parts[1]
+
             params = dict(model_config.get("params", {}))
             model_lower = model_name.lower()
 
             # 思考深度参数 — 根据模型名自动判定 thinking 格式
             # Anthropic 原生模型用 thinking dict，其余用 reasoning_effort
             if thinking_level != "off":
-                if model_lower.startswith(("claude-", "anthropic")):
+                if new_provider in ("claude", "anthropic") or model_lower.startswith(("claude-", "anthropic")):
+                    # 先清理 reasoning_effort 残余，再设置 thinking
+                    params.pop("reasoning_effort", None)
                     budget = self._THINKING_BUDGETS.get(thinking_level, 8000)
                     params["thinking"] = {"type": "enabled", "budget_tokens": budget}
                 else:
                     # deepseek / openai / generic 等都用 reasoning_effort
+                    # 先清理 thinking 残余，再设置 reasoning_effort
+                    params.pop("thinking", None)
                     params["reasoning_effort"] = thinking_level
-                # 清理另一个格式的残余值
-                params.pop("thinking", None)
             else:
                 params["thinking"] = None
                 params["reasoning_effort"] = None
@@ -579,6 +585,14 @@ class SinanREPL:
         if m.startswith(("glm", "chatglm")):
             return "zhipu"
         return "generic"
+
+    @staticmethod
+    def _provider_for_configured_model(model_name: str, available_models: list[dict]) -> str:
+        """Return the provider explicitly configured for a model, if present."""
+        for entry in available_models:
+            if entry.get("model") == model_name and entry.get("provider"):
+                return str(entry["provider"])
+        return ""
 
     def _cmd_clear(self, _args: str) -> str:
         """清空当前输入行（快捷键 Ctrl+D）。"""
@@ -803,24 +817,10 @@ class SinanREPL:
                     return False
                 return answer in ("y", "yes")
 
-            # 执行所有工具调用（通过任务系统）
-            result_messages = []
+            # 执行所有工具调用（直接调用，不经过任务系统以避免 dict→str 转换）
             for tool_call in tool_calls:
-                # 创建任务
-                task = self.task_manager.create_task(
-                    name=f"tool_{tool_call.name}",
-                    type=TaskType.TOOL_CALL,
-                    executor=lambda tc=tool_call: self._execute_single_tool(tc, _status, _approval),
-                    args={},
-                    dependencies=[],
-                )
-                # 执行任务
-                result = self.task_executor.execute(task)
-                if result.output:
-                    result_messages.append(result.output)
-
-            # 将工具结果加入历史
-            self.messages.extend(result_messages)
+                msg = self._execute_single_tool(tool_call, _status, _approval)
+                self.messages.append(msg)
 
             # 继续获取 LLM 的后续回复 (tool -> assistant)
             print_assistant_header(self.console)
@@ -859,26 +859,22 @@ class SinanREPL:
         # 状态回调
         status_callback(name, "running")
 
-        # 危险工具审批
-        tool_def = self.tool_registry.get_tool(name)
-        if tool_def and tool_def.get("dangerous", False):
-            if not approval_callback(name, args):
-                status_callback(name, "rejected")
-                # 压缩拒绝消息
-                output = self.message_compactor.compress_tool_result(
-                    name, "用户拒绝执行", max_chars=100
-                )
-                return {
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "name": name,
-                    "content": output,
-                }
-
         # 执行工具
+        approved = {"value": None}
+        prev_callback = getattr(self.tool_registry, "_confirm_callback", None)
+        prev_danger_confirm = getattr(self.tool_registry, "_danger_confirm", True)
+
+        def _confirm(tool_name: str, _level: str, arguments: dict) -> bool:
+            ok = approval_callback(tool_name, arguments)
+            approved["value"] = ok
+            return ok
+
         try:
+            if self.tool_registry.is_dangerous(name):
+                self.tool_registry.set_confirm_callback(_confirm)
+                self.tool_registry.set_danger_confirm(True)
             result = self.tool_registry.call_tool(name, args)
-            status_callback(name, "done")
+            status_callback(name, "rejected" if approved["value"] is False else "done")
             # 压缩工具输出
             output = self.message_compactor.compress_tool_result(
                 name, str(result), max_chars=400
@@ -901,6 +897,11 @@ class SinanREPL:
                 "name": name,
                 "content": output,
             }
+        finally:
+            if hasattr(self.tool_registry, "set_confirm_callback"):
+                self.tool_registry.set_confirm_callback(prev_callback)
+            if hasattr(self.tool_registry, "set_danger_confirm"):
+                self.tool_registry.set_danger_confirm(prev_danger_confirm)
 
     # ------------------------------------------------------------------
     # 主循环

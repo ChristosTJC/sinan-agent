@@ -144,6 +144,23 @@ class MessageCompactor:
 
         return "\n".join(result_lines)
 
+    def compress_tool_result(self, name: str, text: str, max_chars: int = 400) -> str:
+        """压缩工具调用结果，按字符数截断。
+
+        Args:
+            name: 工具名称。
+            text: 原始文本。
+            max_chars: 最大输出字符数（含前缀）。
+
+        Returns:
+            不超过 ``max_chars`` 的压缩文本。
+        """
+        prefix = f"[{name}] "
+        if len(prefix) + len(text) <= max_chars:
+            return prefix + text
+        limit = max_chars - len(prefix)
+        return prefix + text[:limit]
+
     def compress_file_content(self, text: str, max_lines: int = 200) -> str:
         """
         文件内容压缩：保留头尾代码

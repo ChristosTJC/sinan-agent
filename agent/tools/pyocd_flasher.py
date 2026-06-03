@@ -1,6 +1,7 @@
 """pyOCD 烧录工具集成 — 支持 ARM Cortex-M 芯片烧录。"""
 
 from __future__ import annotations
+from pathlib import Path
 from typing import Optional, List, Dict, Tuple
 import subprocess
 import re
@@ -79,7 +80,7 @@ class PyOCDFlasher:
     def __init__(self, executable: str = "pyocd"):
         self.executable = executable
 
-    def generate_flash_command(
+    def generate_flash_args(
         self,
         firmware_path: str,
         target: str,
@@ -87,8 +88,8 @@ class PyOCDFlasher:
         erase_mode: str = "sector",
         verify: bool = True,
         frequency: Optional[int] = None,
-    ) -> str:
-        """生成烧录命令。"""
+    ) -> list[str]:
+        """生成烧录命令参数列表。"""
         cmd_parts = [self.executable, "flash", "-t", target]
 
         if frequency:
@@ -99,7 +100,26 @@ class PyOCDFlasher:
             cmd_parts.extend(["--base-address", f"0x{base_address:08x}"])
 
         cmd_parts.append(firmware_path)
-        return " ".join(cmd_parts)
+        return cmd_parts
+
+    def generate_flash_command(
+        self,
+        firmware_path: str,
+        target: str,
+        base_address: Optional[int] = None,
+        erase_mode: str = "sector",
+        verify: bool = True,
+        frequency: Optional[int] = None,
+    ) -> str:
+        """生成烧录命令。"""
+        return " ".join(self.generate_flash_args(
+            firmware_path=firmware_path,
+            target=target,
+            base_address=base_address,
+            erase_mode=erase_mode,
+            verify=verify,
+            frequency=frequency,
+        ))
 
     def generate_erase_command(
         self,
@@ -144,6 +164,65 @@ class PyOCDFlasher:
             return result.returncode == 0
         except (subprocess.TimeoutExpired, FileNotFoundError):
             return False
+
+
+def flash_with_pyocd(
+    firmware_path: str,
+    chip_model: str,
+    base_address: Optional[int] = None,
+    erase_mode: str = "sector",
+    frequency: Optional[int] = None,
+) -> dict:
+    """使用 pyOCD 执行固件烧录。"""
+    if not firmware_path:
+        return {"success": False, "error": "缺少参数: firmware_path"}
+    if not chip_model:
+        return {"success": False, "error": "缺少参数: chip_model"}
+
+    firmware = Path(firmware_path).expanduser()
+    if not firmware.is_file():
+        return {"success": False, "error": f"固件文件不存在: {firmware}"}
+
+    target = detect_target_from_chip(chip_model)
+    if not target:
+        return {
+            "success": False,
+            "error": f"不支持的芯片型号: {chip_model}",
+            "supported": list(SUPPORTED_TARGETS.values()),
+        }
+
+    flasher = PyOCDFlasher()
+    if not flasher.check_availability():
+        return {
+            "success": False,
+            "error": "pyOCD 未安装或不可用，请运行: pip install pyocd",
+        }
+
+    cmd = flasher.generate_flash_args(
+        firmware_path=str(firmware),
+        target=target,
+        base_address=base_address,
+        erase_mode=erase_mode,
+        frequency=frequency,
+    )
+
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
+        return {"success": False, "error": str(exc), "command": cmd}
+
+    return {
+        "success": result.returncode == 0,
+        "target": target,
+        "command": cmd,
+        "output": result.stdout,
+        "errors": [result.stderr.strip()] if result.stderr.strip() and result.returncode != 0 else [],
+    }
 
 
 def register_pyocd_tool():

@@ -163,35 +163,39 @@ class KnowledgeIndex:
         writer = self.ix.writer()
         writer.commit(mergetype=CLEAR)
 
-        # 重新扫描知识库目录
+        # 重新扫描知识库目录（.md 和 .yaml）
         count = 0
-        for md_file in knowledge_dir.rglob("*.md"):
-            with open(md_file, "r", encoding="utf-8") as f:
-                content = f.read()
+        for ext in ("*.md", "*.yaml", "*.yml"):
+            for entry in knowledge_dir.rglob(ext):
+                if entry.is_dir():
+                    continue
+                try:
+                    content = entry.read_text(encoding="utf-8")
+                except UnicodeDecodeError:
+                    continue
 
-            # 从文件路径推断文档类型
-            doc_type = self._infer_doc_type(md_file)
+                doc_type = self._infer_doc_type(entry)
 
-            self.add_document(
-                title=md_file.stem,
-                content=content,
-                doc_type=doc_type,
-                filepath=str(md_file)
-            )
-            count += 1
+                self.add_document(
+                    title=entry.stem,
+                    content=content,
+                    doc_type=doc_type,
+                    filepath=str(entry)
+                )
+                count += 1
 
         return count
 
     def _infer_doc_type(self, filepath: Path) -> DocumentType:
         parts = filepath.parts
-        if "mcu" in parts or "芯片" in parts:
+        if any("mcu" in p or "芯片" in p for p in parts):
             return DocumentType.MCU
-        if "protocol" in parts or "协议" in parts:
+        if any("protocol" in p or "协议" in p for p in parts):
             return DocumentType.PROTOCOL
-        if "sensor" in parts or "传感器" in parts:
+        if any("sensor" in p or "传感器" in p for p in parts):
             return DocumentType.SENSOR
-        if "error" in parts or "错误码" in parts:
+        if any("error" in p or "错误码" in p for p in parts):
             return DocumentType.ERROR_CODE
-        if "board" in parts or "板卡" in parts:
+        if any("board" in p or "板卡" in p for p in parts):
             return DocumentType.BOARD
         return DocumentType.GENERAL

@@ -16,6 +16,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+from agent.tools.path_rules import validate_path
+
 # 可读的文本文件扩展名（二进制文件会被拒绝）
 _TEXT_EXTENSIONS = {
     ".py", ".c", ".cpp", ".h", ".hpp", ".rs", ".go", ".java", ".js", ".ts",
@@ -92,7 +94,18 @@ def read_file(
 
 
 def _resolve_path(file_path: str) -> Path | None:
-    """解析并验证路径（仅允许绝对路径）。"""
+    """解析并验证路径（绝对路径 + 敏感路径校验）。"""
+    # ToolRegistry.call_tool() 传入的是完整 arguments dict，提取 file_path 键
+    if isinstance(file_path, dict):
+        file_path = file_path.get("file_path", "")
+        if not file_path:
+            return None
+
+    # 敏感路径校验（硬阻止 + 软阻止）
+    allowed, _reason = validate_path(file_path, mode="read")
+    if not allowed:
+        return None
+
     path = Path(os.path.expanduser(file_path))
     if not path.is_absolute():
         return None

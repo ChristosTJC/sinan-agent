@@ -1,0 +1,37 @@
+name: ESP32-C3
+manufacturer: Espressif
+arch: RISC-V 32-bit (single-core)
+max_clock: 160MHz
+flash: up to 16MB (external)
+ram: 400KB SRAM (384KB + 16KB RTC)
+voltage: 3.0V-3.6V
+package: QFN32 (5x5mm)
+key_features:
+  - RISC-V 32-bit IMAC instruction set
+  - WiFi 802.11 b/g/n (2.4GHz, 1T1R)
+  - Bluetooth 5.0 LE
+  - USB Serial/JTAG (内建, 无需外接 USB-UART)
+  - 2x UART, 2x SPI
+  - 1x I2C
+  - 2x 12-bit ADC (6 channels, 最大 100ksps)
+  - RMT (红外/WS2812 控制)
+  - LED PWM (6 通道)
+  - TWAI (CAN 2.0 控制器, ISO 11898-1)
+  - 内部温度传感器
+  - 硬件 AES/SHA/RSA/ECC 加速器
+strapping_pins:
+  - "GPIO2: 启动时低电平=下载模式 (与 GPIO8 共同决定)"
+  - "GPIO8: 启动时任意值=下载 (配合 GPIO2), 高电平=SPI Boot"
+  - "GPIO9: 内部弱上拉, 决定启动电压 (1=3.3V VDD_SPI)"
+common_pitfalls:
+  - "RISC-V 工具链 (riscv32-esp-elf) 不同于 Xtensa (xtensa-esp32-elf), 编译前确认 IDF 版本"
+  - "USB Serial/JTAG 固定占用 GPIO18 (USB D-) 和 GPIO19 (USB D+), 不可用作普通 IO"
+  - "单核 MCU, FreeRTOS 为单核版本, 无需考虑 SMP 核间同步但也不支持双核并行任务"
+  - "WiFi 与 BLE 共用射频收发器, 同一时刻仅能在 2.4GHz WiFi 或 BLE 之间切换"
+  - "深度睡眠唤醒后 RAM 内容全部丢失, 如需保存状态需使用 RTC Memory (16KB 低功耗域)"
+  - "Strapping 引脚在复位释放时被采样, 不可在启动瞬间被外设驱动为特定电平"
+  - "ADC 最大输入 2.5V (ATTEN=11dB), 测量前需测试衰减器配置对线性度的影响"
+programming_interfaces:
+  - USB Serial/JTAG (GPIO18/GPIO19, 内建, 一键烧录/调试)
+  - UART0 (GPIO20 TX / GPIO21 RX, 默认串口下载)
+  - esptool (UART 或 USB)

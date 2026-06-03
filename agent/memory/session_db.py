@@ -56,7 +56,7 @@ class SessionDB:
     # ------------------------------------------------------------------
 
     def _ensure_schema(self) -> None:
-        """创建数据库表结构（幂等操作）。
+        """创建数据库表结构（幂等操作），并执行旧库迁移。
 
         创建三张表：
           - sessions:    会话元数据（id、项目、模型、时间戳、状态）
@@ -86,29 +86,125 @@ class SessionDB:
                 created_at TEXT,
                 metadata TEXT
             );
+        """)
+        self._migrate_schema()
+        self._ensure_fts_schema()
 
+    def _migrate_schema(self) -> None:
+        """增量迁移旧数据库 schema，补全缺失列。
+
+        对每个表，查询 PRAGMA table_info 找出缺失列，以 ALTER TABLE ADD COLUMN 补齐。
+        避免旧库无法打开的问题。
+        """
+        self._migrate_legacy_messages_table()
+
+        expected = {
+            "sessions": {
+                "updated_at": "TEXT",
+                "message_count": "INTEGER DEFAULT 0",
+                "status": "TEXT DEFAULT 'active'",
+            },
+            "messages": {
+                "created_at": "TEXT",
+                "tool_calls": "TEXT",
+                "tool_results": "TEXT",
+                "metadata": "TEXT",
+            },
+        }
+        for table, columns in expected.items():
+            existing = {
+                row[1] for row in
+                self._conn.execute(f"PRAGMA table_info({table})").fetchall()
+            }
+            for col_name, col_type in columns.items():
+                if col_name not in existing:
+                    self._conn.execute(
+                        f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}"
+                    )
+
+    def _migrate_legacy_messages_table(self) -> None:
+        """Rebuild legacy messages table whose primary key was INTEGER.
+
+        Early alpha databases used ``messages.id INTEGER PRIMARY KEY`` while
+        current code inserts UUID hex strings. SQLite cannot ALTER a primary
+        key type in place, so rebuild the table and preserve old rows.
+        """
+        info = self._conn.execute("PRAGMA table_info(messages)").fetchall()
+        id_row = next((row for row in info if row[1] == "id"), None)
+        if id_row is None or str(id_row[2]).upper() == "TEXT":
+            return
+
+        self._conn.executescript("""
+            DROP TRIGGER IF EXISTS messages_ai;
+            DROP TRIGGER IF EXISTS messages_ad;
+            DROP TRIGGER IF EXISTS messages_au;
+            DROP TABLE IF EXISTS messages_fts;
+            ALTER TABLE messages RENAME TO messages_legacy;
+
+            CREATE TABLE messages (
+                id TEXT PRIMARY KEY,
+                session_id TEXT REFERENCES sessions(id),
+                role TEXT,
+                content TEXT,
+                tool_calls TEXT,
+                tool_results TEXT,
+                created_at TEXT,
+                metadata TEXT
+            );
+        """)
+
+        legacy_columns = {
+            row[1] for row in
+            self._conn.execute("PRAGMA table_info(messages_legacy)").fetchall()
+        }
+        created_expr = "created_at" if "created_at" in legacy_columns else "timestamp"
+        tool_calls_expr = "tool_calls" if "tool_calls" in legacy_columns else "NULL"
+        tool_results_expr = "tool_results" if "tool_results" in legacy_columns else "NULL"
+        metadata_expr = "metadata" if "metadata" in legacy_columns else "NULL"
+
+        self._conn.execute(
+            "INSERT INTO messages (id, session_id, role, content, tool_calls, tool_results, created_at, metadata) "
+            f"SELECT CAST(id AS TEXT), session_id, role, content, {tool_calls_expr}, "
+            f"{tool_results_expr}, {created_expr}, {metadata_expr} FROM messages_legacy"
+        )
+        self._conn.execute("DROP TABLE messages_legacy")
+
+    def _ensure_fts_schema(self) -> None:
+        """Ensure FTS table/triggers match the current external-content schema."""
+        existing = self._conn.execute("PRAGMA table_info(messages_fts)").fetchall()
+        if [row[1] for row in existing] != ["session_id", "content"]:
+            self._conn.execute("DROP TABLE IF EXISTS messages_fts")
+
+        self._conn.executescript("""
             CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
                 session_id, content,
                 content=messages, content_rowid=rowid
             );
 
-            CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON messages BEGIN
+            DROP TRIGGER IF EXISTS messages_ai;
+            DROP TRIGGER IF EXISTS messages_ad;
+            DROP TRIGGER IF EXISTS messages_au;
+
+            CREATE TRIGGER messages_ai AFTER INSERT ON messages BEGIN
                 INSERT INTO messages_fts(rowid, session_id, content)
                 VALUES (new.rowid, new.session_id, new.content);
             END;
 
-            CREATE TRIGGER IF NOT EXISTS messages_ad AFTER DELETE ON messages BEGIN
+            CREATE TRIGGER messages_ad AFTER DELETE ON messages BEGIN
                 INSERT INTO messages_fts(messages_fts, rowid, session_id, content)
                 VALUES ('delete', old.rowid, old.session_id, old.content);
             END;
 
-            CREATE TRIGGER IF NOT EXISTS messages_au AFTER UPDATE ON messages BEGIN
+            CREATE TRIGGER messages_au AFTER UPDATE ON messages BEGIN
                 INSERT INTO messages_fts(messages_fts, rowid, session_id, content)
                 VALUES ('delete', old.rowid, old.session_id, old.content);
                 INSERT INTO messages_fts(rowid, session_id, content)
                 VALUES (new.rowid, new.session_id, new.content);
             END;
         """)
+        self._conn.execute(
+            "INSERT INTO messages_fts(messages_fts) VALUES ('rebuild')"
+        )
 
     # ------------------------------------------------------------------
     # 会话管理

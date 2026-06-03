@@ -976,6 +976,52 @@ class ToolRegistry:
         except ImportError as exc:
             logger.warning("Web 工具不可用: %s", exc)
 
+        # ── MCP 工具 ──
+        try:
+            from agent.tools.mcp_tools import (
+                mcp_server_connect, mcp_server_disconnect,
+                mcp_tools_list, mcp_tool_call,
+                mcp_resources_list, mcp_resource_read,
+            )
+            self.register("mcp_server_connect", mcp_server_connect,
+                          description="连接 MCP server (stdio 子进程)",
+                          danger_level=DangerLevel.MEDIUM,
+                          timeout_sec=30,
+                          parameters={
+                              "server_name": {"type": "string", "description": "服务器名称 [required]", "required": True},
+                              "command": {"type": "array", "items": {"type": "string"}, "description": "启动命令 [required]", "required": True},
+                              "env": {"type": "object", "description": "环境变量 (API key 等，会自动脱敏)", "required": False},
+                          })
+            self.register("mcp_server_disconnect", mcp_server_disconnect,
+                          description="断开 MCP server 连接")
+            self.register("mcp_tools_list", mcp_tools_list,
+                          description="列出 MCP server 的工具",
+                          parameters={
+                              "server_name": {"type": "string", "description": "服务器名称 [required]", "required": True},
+                          })
+            self.register("mcp_tool_call", mcp_tool_call,
+                          description="调用 MCP server 的工具",
+                          danger_level=DangerLevel.MEDIUM,
+                          timeout_sec=30,
+                          parameters={
+                              "server_name": {"type": "string", "description": "服务器名称 [required]", "required": True},
+                              "tool_name": {"type": "string", "description": "工具名称 [required]", "required": True},
+                              "arguments": {"type": "object", "description": "工具参数", "required": False},
+                          })
+            self.register("mcp_resources_list", mcp_resources_list,
+                          description="列出 MCP server 的资源",
+                          parameters={
+                              "server_name": {"type": "string", "description": "服务器名称 [required]", "required": True},
+                          })
+            self.register("mcp_resource_read", mcp_resource_read,
+                          description="读取 MCP server 的资源",
+                          parameters={
+                              "server_name": {"type": "string", "description": "服务器名称 [required]", "required": True},
+                              "uri": {"type": "string", "description": "资源 URI [required]", "required": True},
+                          })
+        except ImportError as exc:
+            logger.warning("MCP 工具不可用: %s", exc)
+
         logger.info("工具发现完成，已注册 %d 个工具", len(self._tools))
 
     # ------------------------------------------------------------------

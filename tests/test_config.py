@@ -88,19 +88,19 @@ class TestLoadProjectConfig:
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write(yaml_content)
             f.flush()
-            with mock.patch("agent.config.legacy.PROJECT_CONFIG_FILE", Path(f.name)):
-                with mock.patch("agent.config.legacy.HAS_YAML", True):
-                    result = load_project_config()
-                    assert result["model"]["provider"] == "test"
+            with mock.patch("agent.config.legacy.PROJECT_CONFIG_FILE", Path(f.name)), \
+                    mock.patch("agent.config.legacy.HAS_YAML", True):
+                result = load_project_config()
+                assert result["model"]["provider"] == "test"
 
     def test_returns_empty_on_invalid_yaml(self):
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write("- just\n- a\n- list\n")
             f.flush()
-            with mock.patch("agent.config.legacy.PROJECT_CONFIG_FILE", Path(f.name)):
-                with mock.patch("agent.config.legacy.HAS_YAML", True):
-                    result = load_project_config()
-                    assert result == {}
+            with mock.patch("agent.config.legacy.PROJECT_CONFIG_FILE", Path(f.name)), \
+                    mock.patch("agent.config.legacy.HAS_YAML", True):
+                result = load_project_config()
+                assert result == {}
 
 
 # ---------------------------------------------------------------------------
@@ -112,32 +112,32 @@ class TestLoadSettings:
     """测试 load_settings 三级优先级。"""
 
     def test_returns_defaults_when_no_files(self):
-        with mock.patch("agent.config.legacy.PROJECT_CONFIG_FILE", Path("/nonexistent")):
-            with mock.patch("agent.config.legacy.SETTINGS_FILE", Path("/nonexistent")):
-                settings = load_settings()
-                assert settings["availableModels"] == DEFAULT_SETTINGS["availableModels"]
+        with mock.patch("agent.config.legacy.PROJECT_CONFIG_FILE", Path("/nonexistent")), \
+                mock.patch("agent.config.legacy.SETTINGS_FILE", Path("/nonexistent")):
+            settings = load_settings()
+            assert settings["availableModels"] == DEFAULT_SETTINGS["availableModels"]
 
     def test_project_config_overrides_defaults(self):
         yaml_content = "availableModels:\n  - label: Test\n    model: gpt-4o\n    provider: openai\n"
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write(yaml_content)
             f.flush()
-            with mock.patch("agent.config.legacy.PROJECT_CONFIG_FILE", Path(f.name)):
-                with mock.patch("agent.config.legacy.HAS_YAML", True):
-                    with mock.patch("agent.config.legacy.SETTINGS_FILE", Path("/nonexistent")):
-                        settings = load_settings()
-                        assert settings["availableModels"][0]["provider"] == "openai"
-                        assert settings["availableModels"][0]["model"] == "gpt-4o"
+            with mock.patch("agent.config.legacy.PROJECT_CONFIG_FILE", Path(f.name)), \
+                    mock.patch("agent.config.legacy.HAS_YAML", True), \
+                    mock.patch("agent.config.legacy.SETTINGS_FILE", Path("/nonexistent")):
+                settings = load_settings()
+                assert settings["availableModels"][0]["provider"] == "openai"
+                assert settings["availableModels"][0]["model"] == "gpt-4o"
 
     def test_user_config_highest_priority(self):
         user_settings = {"availableModels": [{"label": "My", "model": "my-custom-model", "provider": "openai"}]}
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             json.dump(user_settings, f)
             f.flush()
-            with mock.patch("agent.config.legacy.PROJECT_CONFIG_FILE", Path("/nonexistent")):
-                with mock.patch("agent.config.legacy.SETTINGS_FILE", Path(f.name)):
-                    settings = load_settings()
-                    assert settings["availableModels"][0]["model"] == "my-custom-model"
+            with mock.patch("agent.config.legacy.PROJECT_CONFIG_FILE", Path("/nonexistent")), \
+                    mock.patch("agent.config.legacy.SETTINGS_FILE", Path(f.name)):
+                settings = load_settings()
+                assert settings["availableModels"][0]["model"] == "my-custom-model"
 
 
 # ---------------------------------------------------------------------------

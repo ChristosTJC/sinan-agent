@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
@@ -27,7 +26,7 @@ class ToolUseContext:
     duration_ms: float = 0.0
 
 
-class Hook(ABC):
+class Hook:
     """Hook 基类 — 子类覆盖需要的方法即可。
 
     三个拦截点：

@@ -1,6 +1,7 @@
 """有界输出缓冲 — 8MB 内存 + 磁盘溢出。"""
 from __future__ import annotations
 
+from contextlib import suppress
 from pathlib import Path
 from typing import Optional
 
@@ -50,10 +51,8 @@ class TaskOutput:
         self._buffer = ""
         self._total_bytes = 0
         self._overflowed = False
-        try:
+        with suppress(OSError):
             self._output_file.unlink(missing_ok=True)
-        except OSError:
-            pass
 
     @property
     def total_bytes(self) -> int:

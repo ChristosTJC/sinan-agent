@@ -17,6 +17,7 @@ import re
 import socket
 import subprocess
 import time
+from contextlib import suppress
 from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
@@ -98,10 +99,8 @@ class JsonlRpcClient:
     def close(self) -> None:
         """关闭 TCP 连接，释放 socket。"""
         if self._sock is not None:
-            try:
+            with suppress(OSError):
                 self._sock.shutdown(socket.SHUT_RDWR)
-            except OSError:
-                pass
             self._sock.close()
             self._sock = None
             self._buffer = ""
@@ -414,7 +413,7 @@ class ConnectionDiagnostics:
         # 1. DNS 解析
         try:
             ips = socket.getaddrinfo(host, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
-            resolved = list(set(addr[4][0] for addr in ips))
+            resolved = list({addr[4][0] for addr in ips})
             lines.append(f"[DNS]    解析成功: {host} → {', '.join(resolved)}")
         except socket.gaierror as exc:
             lines.append(f"[DNS]    解析失败: {exc}")

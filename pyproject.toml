@@ -57,6 +57,7 @@ addopts = ["-v", "--tb=short"]
 markers = [
     "unit: 快速单元测试（无 IO，单模块验证）",
     "integration: 跨模块 / 全链路干运行测试",
+    "dryrun: 纯 mock/不依赖真实硬件的测试（命令生成+诊断解析验证）",
     "slow: 耗时较长的测试",
 ]
 
@@ -65,7 +66,12 @@ target-version = "py310"
 line-length = 120
 
 [tool.ruff.lint]
-select = ["E9", "F63", "F7", "F82"]
+select = [
+    "E9", "F63", "F7", "F82",  # 语法错误 + 未定义名称（必须）
+    "B",        # flake8-bugbear: 常见 bug 模式检测
+    "SIM",      # flake8-simplify: 过度复杂代码简化建议
+    "C4",       # flake8-comprehensions: 推导式最佳实践
+]
 
 [tool.coverage.run]
 source = ["agent"]

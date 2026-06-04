@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
+from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
@@ -282,10 +283,8 @@ class SinanREPL:
             "# 运行时",
             f"日期: {datetime.now().strftime('%Y-%m-%d')}",
         ]
-        try:
+        with suppress(Exception):
             lines.append(f"目录: {os.getcwd()}")
-        except Exception:
-            pass
         lines.append(f"模型: {self.client.model}")
         if hasattr(self, 'openai_tools') and self.openai_tools:
             tool_names = [t['function']['name'] for t in self.openai_tools]
@@ -991,9 +990,8 @@ class SinanREPL:
             except EOFError:
                 continue
         
-            if user_input == "__QUIT__":
-                if self._handle_exit():
-                    break
+            if user_input == "__QUIT__" and self._handle_exit():
+                break
         
             user_input = user_input.strip()
             if not user_input:
@@ -1002,9 +1000,8 @@ class SinanREPL:
             # 处理斜杠命令
             if user_input.startswith("/"):
                 result = self.cmd_registry.execute(user_input)
-                if result == "__QUIT__":
-                    if self._handle_exit():
-                        break
+                if result == "__QUIT__" and self._handle_exit():
+                    break
                 if result is not None:
                     print_command_result(self.console, result)
                 else:

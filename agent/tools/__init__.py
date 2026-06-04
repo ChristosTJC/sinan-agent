@@ -95,6 +95,7 @@ def _parse_params_from_docstring(fn: Callable) -> dict:
 
 import time as _time
 import json as _json
+import queue as _queue
 from datetime import datetime as _datetime
 from pathlib import Path as _Path
 import threading as _threading
@@ -154,9 +155,8 @@ class AuditLogger:
             "result_summary": result_summary,
         }
         log_file = self._log_dir / f"audit-{_datetime.now().strftime('%Y%m%d')}.jsonl"
-        with self._lock:
-            with open(log_file, "a", encoding="utf-8") as f:
-                f.write(_json.dumps(entry, ensure_ascii=False) + "\n")
+        with self._lock, open(log_file, "a", encoding="utf-8") as f:
+            f.write(_json.dumps(entry, ensure_ascii=False) + "\n")
 
     def query(self, tool_name: str = None, date: str = None, limit: int = 100) -> list[dict]:
         """查询审计日志。"""
@@ -1217,27 +1217,33 @@ class ToolRegistry:
             arguments = ctx.arguments
 
         # ── 旧门控：仅在无 DangerGateHook 时生效 ──
-        if not _has_danger_gate:
-            if self._danger_confirm and danger_level in (DangerLevel.MEDIUM, DangerLevel.HIGH):
-                if self._confirm_callback is None:
-                    result = {
-                        "success": False,
-                        "error": f"危险工具 '{name}' (等级: {danger_level.value}) 需要确认，但未设置确认回调",
-                    }
-                    self._audit.log_tool_call(name, danger_level.value, arguments, result, 0.0, False)
-                    return result
-                if not self._confirm_callback(name, danger_level.value, arguments):
-                    result = {
-                        "success": False,
-                        "error": f"用户拒绝执行危险工具 '{name}' (等级: {danger_level.value})",
-                    }
-                    self._audit.log_tool_call(name, danger_level.value, arguments, result, 0.0, False)
-                    return result
+        if (
+            not _has_danger_gate
+            and self._danger_confirm
+            and danger_level in (DangerLevel.MEDIUM, DangerLevel.HIGH)
+        ):
+            if self._confirm_callback is None:
+                result = {
+                    "success": False,
+                    "error": f"危险工具 '{name}' (等级: {danger_level.value}) 需要确认，但未设置确认回调",
+                }
+                self._audit.log_tool_call(name, danger_level.value, arguments, result, 0.0, False)
+                return result
+            if not self._confirm_callback(name, danger_level.value, arguments):
+                result = {
+                    "success": False,
+                    "error": f"用户拒绝执行危险工具 '{name}' (等级: {danger_level.value})",
+                }
+                self._audit.log_tool_call(name, danger_level.value, arguments, result, 0.0, False)
+                return result
 
         start_time = _time.time()
         result = {}
         try:
-            result = handler(arguments)
+            # ── 外层超时保护：超时后停止等待结果；工具内部仍应实现可取消 I/O。 ──
+            timeout = self._timeouts.get(name)
+            result = self._call_handler_with_timeout(name, handler, arguments, timeout)
+
             if not isinstance(result, dict):
                 result = {"success": True, "result": result}
             elif "success" not in result:
@@ -1279,6 +1285,53 @@ class ToolRegistry:
             timeout = self._timeouts.get(name)
             if timeout and duration_ms > timeout * 1000:
                 logger.warning("工具 '%s' 执行超时: %.0fms (限制 %.0fs)", name, duration_ms, timeout)
+
+    @staticmethod
+    def _call_handler_with_timeout(
+        name: str,
+        handler: Callable,
+        arguments: dict,
+        timeout: Optional[float],
+    ) -> dict:
+        """执行工具 handler，并在外层超时时及时返回。
+
+        Python 线程无法被安全强杀；这里的职责是避免调用方无限等待。
+        高风险工具仍必须在自身实现中使用 subprocess/socket/serial 等可取消超时。
+        """
+        if not timeout or timeout <= 0:
+            return handler(arguments)
+
+        result_queue: _queue.Queue = _queue.Queue(maxsize=1)
+
+        def _target() -> None:
+            try:
+                result_queue.put(("result", handler(arguments)))
+            except Exception as exc:
+                result_queue.put(("error", exc))
+
+        worker = _threading.Thread(
+            target=_target,
+            name=f"sinan-tool-{name}",
+            daemon=True,
+        )
+        worker.start()
+
+        try:
+            kind, value = result_queue.get(timeout=timeout)
+        except _queue.Empty:
+            timeout_text = f"{timeout:g}s"
+            return {
+                "success": False,
+                "error": (
+                    f"工具 '{name}' 执行超时 (限制 {timeout_text})，已停止等待结果。"
+                    "Python 线程无法安全强制终止；如需更长时间，请通过 register() 调整 timeout_sec，"
+                    "高风险工具应在自身实现中使用可取消的 I/O 或子进程超时。"
+                ),
+            }
+
+        if kind == "error":
+            raise value
+        return value
 
 
 # ---------------------------------------------------------------------------

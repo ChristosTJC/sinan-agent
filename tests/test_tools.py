@@ -7,6 +7,8 @@ tools/__init__.py 单元测试。
 - ToolRegistry: 注册、注销、调用、schema 生成
 """
 
+import time
+
 import pytest
 
 from agent.tools import ToolRegistry, _extract_description, _parse_params_from_docstring
@@ -167,6 +169,23 @@ class TestToolRegistry:
         result = reg.call_tool("bad")
         assert result["success"] is False
         assert "boom" in result["error"]
+
+    def test_call_tool_timeout_returns_without_waiting_for_worker_completion(self):
+        reg = ToolRegistry()
+
+        def slow_tool(arguments: dict) -> dict:
+            time.sleep(0.35)
+            return {"success": True}
+
+        reg.register("slow", slow_tool, timeout_sec=0.05)
+
+        started = time.monotonic()
+        result = reg.call_tool("slow", {})
+        elapsed = time.monotonic() - started
+
+        assert result["success"] is False
+        assert "执行超时" in result["error"]
+        assert elapsed < 0.2
 
     def test_discovered_scan_tools_accept_registry_arguments(self, monkeypatch):
         from agent.tools import serial_scanner

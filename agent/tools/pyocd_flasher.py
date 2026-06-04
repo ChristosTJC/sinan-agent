@@ -32,7 +32,7 @@ def detect_target_from_chip(chip_model: str) -> Optional[str]:
     if normalized in SUPPORTED_TARGETS:
         return normalized
 
-    for target_key in SUPPORTED_TARGETS.keys():
+    for target_key in SUPPORTED_TARGETS:
         if target_key in normalized:
             return target_key
 

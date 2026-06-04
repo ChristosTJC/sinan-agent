@@ -27,7 +27,7 @@ def diagnose_stm32_log(log: str) -> dict[str, Any]:
     lowered = log.lower()
 
     if "hardfault" in lowered or "hardfault_handler" in lowered:
-        registers = {name: value for name, value in _FAULT_REG_RE.findall(log)}
+        registers = dict(_FAULT_REG_RE.findall(log))
         result["fault"] = {"type": "HardFault", "registers": registers}
         result["summary"] = "STM32 HardFault detected"
         result["hints"].append("HardFault 优先检查栈溢出、空指针、非法函数指针和中断优先级配置。")

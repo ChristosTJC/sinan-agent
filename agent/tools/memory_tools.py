@@ -43,10 +43,7 @@ def _make_remember_fact_handler(memory_store, sinan_home: Path):
 
         category = arguments.get("category", "memory")
 
-        if category == "user":
-            ok = memory_store.add_user_pref(fact)
-        else:
-            ok = memory_store.add_fact(fact)
+        ok = memory_store.add_user_pref(fact) if category == "user" else memory_store.add_fact(fact)
 
         if ok:
             memory_store.flush_to_disk(sinan_home / "memories")

@@ -56,9 +56,7 @@ class MessageCompactor:
         normal_lines = []
 
         for line in lines:
-            if any(keyword in line for keyword in ["[ERROR]", "[WARNING]", "[FATAL]"]):
-                important_lines.append(line)
-            elif "[INFO]" in line:
+            if any(keyword in line for keyword in ["[ERROR]", "[WARNING]", "[FATAL]"]) or "[INFO]" in line:
                 important_lines.append(line)
             else:
                 normal_lines.append(line)

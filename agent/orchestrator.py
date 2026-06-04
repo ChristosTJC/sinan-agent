@@ -212,7 +212,11 @@ class AgentOrchestrator:
         return self._fallback_plan(user_input)
 
     def _fallback_plan(self, user_input: str) -> list[dict]:
-        """规则式计划 —— 根据关键词映射可用工具，不硬编码工具名。"""
+        """规则式 fallback 计划 —— 基于关键词→工具映射的确定性规则引擎，不调用 LLM。
+
+        注意：这是工程上合理的分阶段策略 —— 常见嵌入式任务可直接匹配，
+        但复杂/模糊意图可能匹配不到最优工具链。需要 LLM 规划时请使用 --llm 显式启用。
+        """
         tool_names = [t["name"] for t in self.registry.list_tools()] if self.registry else []
         plan: list[dict] = []
         sid, lo = 0, user_input.lower()
@@ -270,19 +274,17 @@ class AgentOrchestrator:
                          "args": {"port": "/dev/ttyUSB0", "count": 10},
                          "expected_outcome": "返回传感器样本"})
         # 编译
-        if any(kw in lo for kw in ("编译", "build", "固件", "firmware")):
-            if "build_firmware" in tool_names:
-                sid += 1
-                plan.append({"step_id": sid, "action": "编译固件", "tool": "build_firmware",
-                             "args": {"project_path": "."}, "expected_outcome": "编译成功"})
+        if any(kw in lo for kw in ("编译", "build", "固件", "firmware")) and "build_firmware" in tool_names:
+            sid += 1
+            plan.append({"step_id": sid, "action": "编译固件", "tool": "build_firmware",
+                         "args": {"project_path": "."}, "expected_outcome": "编译成功"})
         # 烧录
-        if any(kw in lo for kw in ("烧录", "flash", "下载")):
-            if "flash_firmware" in tool_names:
-                sid += 1
-                plan.append({"step_id": sid, "action": "烧录固件（需确认端口）",
-                             "tool": "flash_firmware",
-                             "args": {"project_path": ".", "port": "", "method": "auto"},
-                             "expected_outcome": "烧录固件或提示缺少端口"})
+        if any(kw in lo for kw in ("烧录", "flash", "下载")) and "flash_firmware" in tool_names:
+            sid += 1
+            plan.append({"step_id": sid, "action": "烧录固件（需确认端口）",
+                         "tool": "flash_firmware",
+                         "args": {"project_path": ".", "port": "", "method": "auto"},
+                         "expected_outcome": "烧录固件或提示缺少端口"})
         # 文件操作
         if any(kw in lo for kw in ("文件", "读", "写", "编辑", "搜索")):
             for t in ("read_file", "grep", "glob", "edit_file", "write_file"):

@@ -158,9 +158,8 @@ class TestDetectProvider:
         env = {"OPENAI_API_KEY": "x"}
         with mock.patch.dict(os.environ, env, clear=False):
             # 清除 ANTHROPIC_API_KEY
-            with mock.patch.dict(os.environ, {}, clear=False):
-                os.environ.pop("ANTHROPIC_API_KEY", None)
-                assert detect_provider() == "openai"
+            os.environ.pop("ANTHROPIC_API_KEY", None)
+            assert detect_provider() == "openai"
 
     def test_ollama_fallback(self):
         with mock.patch.dict(os.environ, {}, clear=True):

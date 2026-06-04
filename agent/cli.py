@@ -68,10 +68,7 @@ def cmd_memory(args: argparse.Namespace) -> int:
             print(f"  [{i}] {pref}")
 
     elif args.memory_action == "add":
-        if args.user:
-            ok = store.add_user_pref(args.text)
-        else:
-            ok = store.add_fact(args.text)
+        ok = store.add_user_pref(args.text) if args.user else store.add_fact(args.text)
         if ok:
             store.flush_to_disk(SINAN_HOME / "memories")
             print(f"✅ 已添加记忆")

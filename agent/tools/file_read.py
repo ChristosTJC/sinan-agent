@@ -125,10 +125,7 @@ def _read_text(path: Path, offset: int, limit: int) -> dict[str, Any]:
     total_lines = len(lines)
 
     # offset 为 1-based 行号
-    if offset > 0:
-        start_idx = max(0, offset - 1)
-    else:
-        start_idx = 0
+    start_idx = max(0, offset - 1) if offset > 0 else 0
 
     end_idx = min(start_idx + limit, total_lines)
     selected = lines[start_idx:end_idx]

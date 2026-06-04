@@ -10,6 +10,7 @@ import logging
 import subprocess
 import threading
 import time
+from contextlib import suppress
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
@@ -235,18 +236,14 @@ class McpClientManager:
             return
         conn.connected = False
         if conn.process:
-            try:
+            with suppress(Exception):
                 conn.process.stdin.close()
-            except Exception:
-                pass
             try:
                 conn.process.terminate()
                 conn.process.wait(timeout=3)
             except Exception:
-                try:
+                with suppress(Exception):
                     conn.process.kill()
-                except Exception:
-                    pass
 
     def shutdown_all(self) -> None:
         for name in list(self._connections.keys()):

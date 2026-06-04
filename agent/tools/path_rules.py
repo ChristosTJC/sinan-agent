@@ -100,11 +100,7 @@ def _is_sensitive(resolved_path_str: str, *, allow_soft: bool = False) -> bool:
         return False
 
     # 软阻止
-    for pat in SOFT_DENY_PATTERNS:
-        if fnmatch.fnmatch(resolved_path_str, pat):
-            return True
-
-    return False
+    return any(fnmatch.fnmatch(resolved_path_str, pat) for pat in SOFT_DENY_PATTERNS)
 
 
 def validate_path(

@@ -207,10 +207,7 @@ class SinanRunController:
         previous_failed = False
 
         for step in plan:
-            if previous_failed:
-                rec = self._skip_step_after_failure(step)
-            else:
-                rec = self._execute_step(step)
+            rec = self._skip_step_after_failure(step) if previous_failed else self._execute_step(step)
             steps.append(rec)
             if not rec.get("success", False):
                 all_passed = False

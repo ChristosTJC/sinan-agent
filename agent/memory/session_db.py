@@ -17,6 +17,7 @@ import json
 import os
 import sqlite3
 import uuid
+from contextlib import suppress
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -503,10 +504,8 @@ class SessionDB:
 
         关闭后不可再调用其他方法。重复调用安全（无操作）。
         """
-        try:
+        with suppress(sqlite3.ProgrammingError):
             self._conn.close()
-        except sqlite3.ProgrammingError:
-            pass
 
 
 def _utcnow_iso() -> str:

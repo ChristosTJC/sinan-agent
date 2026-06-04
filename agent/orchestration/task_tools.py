@@ -175,13 +175,16 @@ def task_stop(arguments: dict) -> dict:
         return {"success": False, "error": f"任务不在可停止状态: {task.status.value}"}
 
     # HIGH 危险等级只允许 graceful cancel
-    if task.type == OrchestrationTaskType.HARDWARE_OP and not force:
-        if task.status == OrchestrationTaskStatus.IN_PROGRESS:
-            return {
-                "success": False,
-                "error": "硬件操作任务正在进行中，不支持强制停止。请使用 force=true 或等待任务完成。",
-                "hint": "graceful_only",
-            }
+    if (
+        task.type == OrchestrationTaskType.HARDWARE_OP
+        and not force
+        and task.status == OrchestrationTaskStatus.IN_PROGRESS
+    ):
+        return {
+            "success": False,
+            "error": "硬件操作任务正在进行中，不支持强制停止。请使用 force=true 或等待任务完成。",
+            "hint": "graceful_only",
+        }
 
     task.status = OrchestrationTaskStatus.KILLED
     task.end_time = time.time()

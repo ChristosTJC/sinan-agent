@@ -17,10 +17,56 @@ import re
 import shutil
 import subprocess
 import time
+from contextlib import suppress
 from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# 固件文件确定性解析
+# ---------------------------------------------------------------------------
+
+
+def _resolve_unique_firmware(search_dirs: list[Path], patterns: list[str],
+                              label: str = "固件") -> tuple[Optional[Path], Optional[str]]:
+    """在搜索目录中递归查找唯一固件文件。
+
+    多个匹配时返回错误信息而非静默选取第一个 —— 防止多 target/多芯片项目烧错产物。
+
+    Args:
+        search_dirs: 要搜索的目录列表。
+        patterns: glob 模式列表（如 ``["*.bin", "*.elf"]``）。
+        label: 错误信息中的文件类型标签。
+
+    Returns:
+        (firmware_path, error) —— 恰好一个匹配时 error 为 None，
+        零匹配时 firmware_path 为 None，多个匹配时两者均非 None 且 firmware_path 为 None。
+    """
+    all_candidates: list[Path] = []
+    for search_dir in search_dirs:
+        if not search_dir.is_dir():
+            continue
+        for pattern in patterns:
+            all_candidates.extend(search_dir.rglob(pattern))
+    # 去重（按解析后的绝对路径）
+    seen: set[str] = set()
+    unique: list[Path] = []
+    for p in all_candidates:
+        key = str(p.resolve())
+        if key not in seen:
+            seen.add(key)
+            unique.append(p)
+    unique.sort(key=lambda p: str(p))
+
+    if not unique:
+        return None, None
+    if len(unique) > 1:
+        listed = "\n  ".join(str(p) for p in unique)
+        return None, f"在搜索目录中找到 {len(unique)} 个{label}文件，无法确定烧录目标。请显式指定固件路径:\n  {listed}"
+    return unique[0], None
+
 
 # ---------------------------------------------------------------------------
 # 支持的烧写方法
@@ -267,7 +313,7 @@ def _flash_esptool(project_path: Path, port: str, chip: str = "") -> dict:
     if not chip:
         chip = _detect_esp_chip(project_path)
 
-    # 查找固件文件
+    # 查找固件文件 —— 多匹配时报错而非静默取第一个
     firmware_path: Optional[Path] = None
     bootloader_path: Optional[Path] = None
     partition_path: Optional[Path] = None
@@ -277,40 +323,23 @@ def _flash_esptool(project_path: Path, port: str, chip: str = "") -> dict:
         project_path / ".pio",
     ]
 
-    for search_dir in search_dirs:
-        if search_dir.is_dir():
-            for p in search_dir.rglob("firmware.bin"):
-                firmware_path = p
-                break
-            for p in search_dir.rglob("bootloader.bin"):
-                bootloader_path = p
-                break
-            for p in search_dir.rglob("partition-table.bin"):
-                partition_path = p
-                break
-            # 也搜索子目录下的 patterns
-            if firmware_path is None:
-                for pattern in ["*.bin", "*.elf"]:
-                    matches = list(search_dir.rglob(pattern))
-                    if matches:
-                        for m in matches:
-                            if m.name == "firmware.bin":
-                                firmware_path = m
-                                break
-                        if firmware_path is None:
-                            firmware_path = matches[0]
-                        break
-        if firmware_path is not None:
-            break
-
+    # 主固件 —— 优先精确匹配 firmware.bin，再回退到宽泛模式
+    firmware_path, fw_err = _resolve_unique_firmware(
+        search_dirs, ["firmware.bin"], "固件")
+    if firmware_path is None and fw_err is None:
+        firmware_path, fw_err = _resolve_unique_firmware(
+            search_dirs, ["*.bin", "*.elf"], "固件")
+    if fw_err:
+        return {"success": False, "output": "", "errors": [fw_err]}
     if firmware_path is None:
-        all_bins = list(project_path.rglob("firmware.bin"))
-        if all_bins:
-            firmware_path = all_bins[0]
-        else:
-            all_bins = list(project_path.rglob("*.bin"))
-            if all_bins:
-                firmware_path = all_bins[0]
+        # 回退：全局搜索
+        firmware_path, fw_err = _resolve_unique_firmware(
+            [project_path], ["firmware.bin"], "固件")
+        if firmware_path is None and fw_err is None:
+            firmware_path, fw_err = _resolve_unique_firmware(
+                [project_path], ["*.bin"], "固件")
+        if fw_err:
+            return {"success": False, "output": "", "errors": [fw_err]}
 
     if firmware_path is None:
         return {
@@ -318,6 +347,19 @@ def _flash_esptool(project_path: Path, port: str, chip: str = "") -> dict:
             "output": "",
             "errors": [f"未找到固件文件（.bin）。已搜索: {project_path}"],
         }
+
+    # 引导加载程序（允许缺失）
+    for search_dir in search_dirs:
+        if search_dir.is_dir():
+            for p in search_dir.rglob("bootloader.bin"):
+                bootloader_path = p
+                break
+    # 分区表（允许缺失）
+    for search_dir in search_dirs:
+        if search_dir.is_dir():
+            for p in search_dir.rglob("partition-table.bin"):
+                partition_path = p
+                break
 
     logger.info("烧写固件: %s → %s (chip=%s)", firmware_path.name, port, chip or "auto")
 
@@ -396,13 +438,11 @@ def _flash_stm32cubeprog(project_path: Path, port: str) -> dict:
             ],
         }
 
-    # 查找 firmware.hex/.bin/.elf
-    firmware_path: Optional[Path] = None
-    for ext in (".hex", ".bin", ".elf"):
-        candidates = list(project_path.rglob(f"*{ext}"))
-        if candidates:
-            firmware_path = candidates[0]
-            break
+    # 查找 firmware.hex/.bin/.elf —— 多匹配时报错而非静默取第一个
+    firmware_path, fw_err = _resolve_unique_firmware(
+        [project_path], ["*.hex", "*.bin", "*.elf"], "固件")
+    if fw_err:
+        return {"success": False, "output": "", "errors": [fw_err]}
 
     if firmware_path is None:
         return {
@@ -465,13 +505,11 @@ def _flash_openocd(project_path: Path, port: str) -> dict:
             if cfgs:
                 config_file = cfgs[0]
 
-    # 查找固件
-    firmware_path: Optional[Path] = None
-    for ext in (".elf", ".bin", ".hex"):
-        candidates = list(project_path.rglob(f"*{ext}"))
-        if candidates:
-            firmware_path = candidates[0]
-            break
+    # 查找固件 —— 多匹配时报错而非静默取第一个
+    firmware_path, fw_err = _resolve_unique_firmware(
+        [project_path], ["*.elf", "*.bin", "*.hex"], "固件")
+    if fw_err:
+        return {"success": False, "output": "", "errors": [fw_err]}
 
     if firmware_path is None:
         return {
@@ -514,21 +552,21 @@ def _flash_jlink(project_path: Path, port: str) -> dict:
             "errors": ["JLinkExe 未安装。请从 https://www.segger.com/downloads/jlink/ 下载"],
         }
 
-    # 查找脚本文件
+    # 查找 J-Link 脚本（允许多个但记录警告）
     script_file: Optional[Path] = None
     for pattern in ("*.jlink", "*.jlinkscript", "flash.jlink"):
         candidates = list(project_path.rglob(pattern))
         if candidates:
+            if len(candidates) > 1:
+                logger.warning("J-Link 脚本不唯一（共 %d 个），使用: %s", len(candidates), candidates[0])
             script_file = candidates[0]
             break
 
-    # 查找固件
-    firmware_path: Optional[Path] = None
-    for ext in (".hex", ".bin", ".elf"):
-        candidates = list(project_path.rglob(f"*{ext}"))
-        if candidates:
-            firmware_path = candidates[0]
-            break
+    # 查找固件 —— 多匹配时报错而非静默取第一个
+    firmware_path, fw_err = _resolve_unique_firmware(
+        [project_path], ["*.hex", "*.bin", "*.elf"], "固件")
+    if fw_err:
+        return {"success": False, "output": "", "errors": [fw_err]}
 
     if firmware_path is None and script_file is None:
         return {
@@ -571,10 +609,8 @@ def _flash_jlink(project_path: Path, port: str) -> dict:
 
     # 清理临时脚本
     if firmware_path and not script_file:
-        try:
+        with suppress(OSError):
             Path(tmp_script).unlink(missing_ok=True)
-        except OSError:
-            pass
 
     return {
         "success": result.returncode == 0,
@@ -767,10 +803,7 @@ def flash_firmware(
     flasher = _FLASHERS[method]
     logger.info("开始烧写固件: method=%s, port=%s, project=%s", method, port, root)
 
-    if method == "esptool":
-        result = _flash_esptool(root, port, chip=chip or "")
-    else:
-        result = flasher(root, port)
+    result = _flash_esptool(root, port, chip=chip or "") if method == "esptool" else flasher(root, port)
 
     if result["success"]:
         logger.info("烧写成功: %s", port)
@@ -818,18 +851,17 @@ def verify_flash(project_path: str, port: str) -> dict:
                 "errors": ["esptool.py 未安装"],
             }
 
-        firmware_path: Optional[Path] = None
-        for search_dir in [root / ".pio" / "build", root / "build", root / ".pio"]:
-            if search_dir.is_dir():
-                candidates = list(search_dir.rglob("firmware.bin"))
-                if candidates:
-                    firmware_path = candidates[0]
-                    break
+        firmware_path, fw_err = _resolve_unique_firmware(
+            [root / ".pio" / "build", root / "build", root / ".pio"],
+            ["firmware.bin", "*.bin"], "固件")
+        if fw_err:
+            return {"verified": False, "output": "", "errors": [fw_err]}
 
         if firmware_path is None:
-            candidates = list(root.rglob("firmware.bin"))
-            if candidates:
-                firmware_path = candidates[0]
+            firmware_path, fw_err = _resolve_unique_firmware(
+                [root], ["firmware.bin", "*.bin"], "固件")
+            if fw_err:
+                return {"verified": False, "output": "", "errors": [fw_err]}
 
         if firmware_path is None:
             return {
@@ -861,12 +893,10 @@ def verify_flash(project_path: str, port: str) -> dict:
                 cfg = candidate
                 break
 
-        firmware_path: Optional[Path] = None
-        for ext in (".elf", ".bin", ".hex"):
-            candidates = list(root.rglob(f"*{ext}"))
-            if candidates:
-                firmware_path = candidates[0]
-                break
+        firmware_path, fw_err = _resolve_unique_firmware(
+            [root], ["*.elf", "*.bin", "*.hex"], "固件")
+        if fw_err:
+            return {"verified": False, "output": "", "errors": [fw_err]}
 
         if firmware_path is None:
             return {"verified": False, "output": "", "errors": ["未找到固件文件"]}

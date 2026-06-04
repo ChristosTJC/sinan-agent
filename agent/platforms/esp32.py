@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import suppress
 from typing import Any, Optional
 
 from agent.platforms.base import BuildSystem, ChipFamily, ChipVariant, FlashTool, get_global_registry
@@ -119,12 +120,10 @@ def register_esp32_platform() -> None:
     registry = get_global_registry()
     platform = ESP32Platform()
 
-    try:
+    with suppress(ValueError):
         registry.register(platform.get_chip_family())
-    except ValueError:
-        pass
 
-    try:
+    with suppress(ValueError):
         registry.register_build_system(BuildSystem(
             name="esp-idf",
             display_name="ESP-IDF",
@@ -132,18 +131,14 @@ def register_esp32_platform() -> None:
             build_command="idf.py build",
             clean_command="idf.py fullclean",
         ))
-    except ValueError:
-        pass
 
-    try:
+    with suppress(ValueError):
         registry.register_flash_tool(FlashTool(
             name="esptool",
             display_name="esptool.py",
             supported_families=["ESP32"],
             flash_command_template="esptool.py --chip {target} --port {port} write_flash 0x10000 {firmware}",
         ))
-    except ValueError:
-        pass
 
 
 register_esp32_platform()

@@ -765,11 +765,7 @@ def get_toolchain_info(project_path: str) -> dict:
                         platform_val = parts[1].strip()
                         if "espressif" in platform_val:
                             result["target_arch"] = "xtensa"
-                        elif "ststm32" in platform_val:
-                            result["target_arch"] = "cortex-m"
-                        elif "atmelsam" in platform_val:
-                            result["target_arch"] = "cortex-m"
-                        elif "nordicnrf" in platform_val:
+                        elif "ststm32" in platform_val or "atmelsam" in platform_val or "nordicnrf" in platform_val:
                             result["target_arch"] = "cortex-m"
                 if stripped.startswith("board"):
                     parts = stripped.split("=", 1)

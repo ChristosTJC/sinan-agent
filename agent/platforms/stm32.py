@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import suppress
 from typing import Any, Optional
 
 from agent.platforms.base import BuildSystem, ChipFamily, ChipVariant, FlashTool, get_global_registry
@@ -127,12 +128,10 @@ def register_stm32_platform() -> None:
     registry = get_global_registry()
     platform = STM32Platform()
 
-    try:
+    with suppress(ValueError):
         registry.register(platform.get_chip_family())
-    except ValueError:
-        pass
 
-    try:
+    with suppress(ValueError):
         registry.register_build_system(BuildSystem(
             name="cmake",
             display_name="CMake",
@@ -140,18 +139,14 @@ def register_stm32_platform() -> None:
             build_command="cmake --build build",
             clean_command="cmake --build build --target clean",
         ))
-    except ValueError:
-        pass
 
-    try:
+    with suppress(ValueError):
         registry.register_flash_tool(FlashTool(
             name="stm32cubeprog",
             display_name="STM32CubeProgrammer",
             supported_families=["STM32"],
             flash_command_template="STM32_Programmer_CLI -c port=SWD -w {firmware} -v -rst",
         ))
-    except ValueError:
-        pass
 
 
 register_stm32_platform()

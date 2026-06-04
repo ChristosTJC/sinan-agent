@@ -67,7 +67,7 @@ def _is_read_only(cmd: str) -> bool:
 
 
 def _run(command: str, timeout: int, cwd: str) -> dict[str, Any]:
-    """执行命令。始终 list-based subprocess，不经过 shell。"""
+    """通过 /bin/bash -c 执行命令。deny-list 在 shell_command() 层预先拦截已知危险模式。"""
     proc = subprocess.run(
         ["/bin/bash", "-c", command],
         cwd=cwd,

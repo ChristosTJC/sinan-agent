@@ -1,5 +1,10 @@
 """STM32 端到端干运行集成测试。
 
+⚠️ 重要：这些是纯 dry-run 测试，不依赖真实硬件。只验证：
+- 命令生成正确性（工具链参数、芯片型号映射）
+- 诊断解析逻辑（HardFault/assert/复位模式识别）
+- 不证明真实硬件烧录闭环！
+
 验证完整链路：build_firmware → flash_firmware → diagnose，全部通过 mock
 subprocess 执行，不依赖真实硬件。
 """
@@ -8,7 +13,7 @@ import subprocess
 
 import pytest
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.dryrun]
 
 from agent.tools import firmware_builder, firmware_flasher
 from agent.tools.firmware_builder import build_firmware

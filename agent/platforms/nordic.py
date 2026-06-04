@@ -1,6 +1,7 @@
 """Nordic nRF 平台支持 — nRF52/nRF53 系列芯片。"""
 
 from __future__ import annotations
+from contextlib import suppress
 from typing import Optional, Dict, Any
 from agent.platforms.base import ChipFamily, ChipVariant, BuildSystem, FlashTool
 
@@ -178,12 +179,10 @@ def register_nordic_platform():
     platform = NordicPlatform()
     registry = get_global_registry()
 
-    try:
+    with suppress(ValueError):
         registry.register(platform.get_chip_family())
-    except ValueError:
-        pass
 
-    try:
+    with suppress(ValueError):
         registry.register_build_system(BuildSystem(
             name="cmake",
             display_name="CMake",
@@ -191,10 +190,8 @@ def register_nordic_platform():
             build_command="cmake --build build",
             clean_command="cmake --build build --target clean",
         ))
-    except ValueError:
-        pass
 
-    try:
+    with suppress(ValueError):
         registry.register_flash_tool(FlashTool(
             name="pyocd",
             display_name="pyOCD",
@@ -202,8 +199,6 @@ def register_nordic_platform():
             flash_command_template="pyocd flash -t {target} {firmware}",
             verify_command_template="pyocd verify -t {target} {firmware}",
         ))
-    except ValueError:
-        pass
 
 
 register_nordic_platform()

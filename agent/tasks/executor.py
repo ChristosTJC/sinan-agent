@@ -38,10 +38,7 @@ class TaskExecutor:
 
         try:
             # 执行任务
-            if task.executor:
-                output = task.executor(**task.args)
-            else:
-                output = ""
+            output = task.executor(**task.args) if task.executor else ""
 
             # 创建成功结果
             result = TaskResult(success=True, output=str(output), error="")

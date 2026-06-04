@@ -57,7 +57,7 @@ class TaskManager:
     def get_ready_tasks(self) -> list[Task]:
         """获取所有就绪的任务（依赖已满足）"""
         ready = []
-        for task_id, task in self.tasks.items():
+        for _task_id, task in self.tasks.items():
             if task.status != TaskStatus.PENDING:
                 continue
 
@@ -131,14 +131,6 @@ class TaskManager:
 
             visited.add(tid)
 
-            for dep_id in self.task_graph.get(tid, []):
-                if dfs(dep_id):
-                    return True
+            return any(dfs(dep_id) for dep_id in self.task_graph.get(tid, []))
 
-            return False
-
-        for dep_id in dependencies:
-            if dfs(dep_id):
-                return True
-
-        return False
+        return any(dfs(dep_id) for dep_id in dependencies)

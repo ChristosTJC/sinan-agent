@@ -371,9 +371,7 @@ class BaseOpenAICompatibleClient(LLMClient):
         model_lower = self.model.lower()
         if model_lower.startswith(("o1", "o3", "o4")):
             return True
-        if "deepseek" in model_lower and ("v4" in model_lower or "reasoner" in model_lower):
-            return True
-        return False
+        return "deepseek" in model_lower and ("v4" in model_lower or "reasoner" in model_lower)
 
     def _build_chat_body(
         self, messages: list[dict], tools: Optional[list[dict]], stream: bool

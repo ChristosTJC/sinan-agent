@@ -34,10 +34,7 @@ class SkillWriter:
         if name.startswith("/") or "/" in name:
             return False
         # 禁止非小写连字符格式
-        for ch in name:
-            if not (ch.islower() or ch.isdigit() or ch == "-"):
-                return False
-        return True
+        return all(ch.islower() or ch.isdigit() or ch == "-" for ch in name)
 
     # ── 写技能 ─────────────────────────────────────────────────
 
@@ -136,10 +133,7 @@ class SkillWriter:
             # 找下一个 ## 标题或文件尾
             rest = current[pos + len(heading) :]
             next_heading = rest.find("\n## ")
-            if next_heading != -1:
-                insert_pos = pos + len(heading) + next_heading
-            else:
-                insert_pos = len(current)
+            insert_pos = pos + len(heading) + next_heading if next_heading != -1 else len(current)
             new_content = (
                 current[:insert_pos].rstrip()
                 + "\n"

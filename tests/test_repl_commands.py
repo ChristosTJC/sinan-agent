@@ -26,7 +26,7 @@ def test_command_registry_catches_handler_exceptions():
 
     registry.register(SlashCommand("boom", "explode", handler=boom))
 
-    assert "命令执行出错: boom" == registry.execute("/boom")
+    assert registry.execute("/boom") == "命令执行出错: boom"
 
 
 def test_command_registry_hides_hidden_commands_from_names_and_visible_list():

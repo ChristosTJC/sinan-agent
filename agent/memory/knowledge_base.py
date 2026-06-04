@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+from contextlib import suppress
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 
@@ -81,10 +82,8 @@ class KnowledgeBase:
         self._user_index: Optional[KnowledgeIndex] = None
         if self.user_kb_dir is not None:
             self.user_kb_dir.mkdir(parents=True, exist_ok=True)
-            try:
+            with suppress(RuntimeError):
                 self._user_index = KnowledgeIndex(index_root / "user")
-            except RuntimeError:
-                pass
 
         self._auto_index()
 

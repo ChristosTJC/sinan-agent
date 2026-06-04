@@ -396,6 +396,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         output_dir=Path(args.output_dir).expanduser() if args.output_dir else None,
         llm_client=llm_client,
     )
+    from agent.config import get_tools_config
+    controller.max_tool_depth = int(get_tools_config().get("max_tool_depth", 25))
     result = controller.run(args.goal)
     return 0 if result.get("success") else 1
 

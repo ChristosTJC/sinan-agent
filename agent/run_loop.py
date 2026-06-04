@@ -22,6 +22,12 @@ _PHASE_LABELS = {
     "consolidate": "沉淀记录",
 }
 
+_RUN_SYSTEM_PROMPT = (
+    "你是司南，嵌入式系统开发智能体。根据用户目标自主调用工具完成任务："
+    "扫描设备、编译/烧录固件、监听串口、诊断日志等。"
+    "每步说明你的判断，工具失败时分析原因并调整，完成后给出简洁结论。"
+)
+
 
 class RunTraceWriter:
     """Writes a single run's task metadata, plan, trace, report, and structured events."""
@@ -150,6 +156,9 @@ class SinanRunController:
         self.writer.write_task(task)
         self._emit("run_start", goal=goal, run_id=self.run_id)
 
+        if self.llm_client is not None:
+            return self._run_with_agent_session(goal, task, started_at)
+
         orchestrator = AgentOrchestrator(
             registry=self.registry,
             memory_store=self.memory_store,
@@ -192,6 +201,39 @@ class SinanRunController:
         self.writer.write_task(task)
         self.writer.write_report(result)
         self._emit("run_done", run_id=self.run_id, success=success, run_dir=str(self.run_dir))
+        return result
+
+    def _run_with_agent_session(self, goal, task, started_at):
+        from agent.core import AgentSession, TraceRenderer, AutoApprove, DenyDangerous
+
+        approval = AutoApprove() if self.confirm_dangerous else DenyDangerous()
+        renderer = TraceRenderer(event_path=self.run_dir / "event.jsonl")
+        session = AgentSession(
+            self.llm_client, self.registry,
+            system_prompt=_RUN_SYSTEM_PROMPT,
+            approval=approval, renderer=renderer,
+            max_tool_depth=getattr(self, "max_tool_depth", 25),
+            stream=False,
+        )
+        self._emit("phase_start", phase="execute", label="执行工具")
+        turn = session.send(goal)
+        self._emit("phase_done", phase="execute", label="执行工具",
+                   summary=f"{turn.tool_calls_made} 次工具调用")
+
+        result = {
+            "success": turn.success,
+            "run_id": self.run_id,
+            "run_dir": str(self.run_dir),
+            "phases": {"execute": {"summary": turn.final_text,
+                                   "tool_results": turn.tool_results,
+                                   "rejected_tools": turn.rejected_tools}},
+            "result": turn.final_text,
+            "memory_written": False,
+        }
+        task.update({"finished_at": _now(), "success": turn.success, "result": turn.final_text})
+        self.writer.write_task(task)
+        self.writer.write_report(result)
+        self._emit("run_done", run_id=self.run_id, success=turn.success, run_dir=str(self.run_dir))
         return result
 
     def _run_phase(self, phase: str, fn: Callable[[], Any]) -> Any:

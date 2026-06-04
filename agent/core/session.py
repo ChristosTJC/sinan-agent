@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Optional
 
 from agent.core.approval import ApprovalPolicy
 from agent.core.renderer import Renderer
@@ -118,6 +117,7 @@ class AgentSession:
         result.final_text = (
             f"工具调用轮次已达上限 ({self._max_tool_depth})，已终止。"
         )
+        logger.warning("工具调用轮次达上限 %d，已终止本 turn", self._max_tool_depth)
         self._messages.append({"role": "assistant", "content": result.final_text})
         return result
 
@@ -146,6 +146,7 @@ class AgentSession:
         for rec in records:
             result.tool_results.append(rec)
             if rec.get("rejected"):
+                logger.info("工具 %s 审批被拒，未执行", rec["name"])
                 result.rejected_tools.append(rec["name"])
                 self._renderer.on_event(ApprovalDeniedEvent(tool_name=rec["name"]))
                 continue

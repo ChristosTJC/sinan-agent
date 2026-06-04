@@ -27,11 +27,10 @@ from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.formatted_text import HTML
 
-from agent.llm.client import LLMClient, StreamChunk, ToolCall, create_client, detect_provider
-from agent.config import apply_settings, get_model_config, create_default_config
+from agent.llm.client import LLMClient, create_client, detect_provider
+from agent.config import apply_settings, get_model_config, create_default_config, get_tools_config
 from agent.repl.commands import CommandRegistry, SlashCompleter, build_default_commands
 from agent.repl.tool_bridge import (
-    build_tool_call_message,
     tools_to_openai_format,
 )
 from agent.repl.theme import (
@@ -47,7 +46,6 @@ from agent.repl.theme import (
     print_info,
     print_goodbye,
     print_command_result,
-    print_thinking_panel,
     create_bottom_toolbar,
     create_rprompt,
     BRAND_PRIMARY, BRAND_ACCENT, DIM, RESET, FG_GRAY,
@@ -110,9 +108,6 @@ def _build_keybindings() -> KeyBindings:
 class SinanREPL:
     """司南交互式 REPL。"""
 
-    # 工具调用最大递归深度
-    MAX_TOOL_DEPTH = 10
-
     def __init__(
         self,
         provider: Optional[str] = None,
@@ -166,6 +161,10 @@ class SinanREPL:
         # 蒸馏计数器
         self._session_tool_calls = 0
         self._distilled = False
+
+        # AgentSession 内核（懒构造，复用同一 messages 历史对象）
+        self._agent_session = None
+        self._max_tool_depth = int(get_tools_config().get("max_tool_depth", 25))
 
         # 命令系统
         self.cmd_registry = build_default_commands()
@@ -291,42 +290,58 @@ class SinanREPL:
             lines.append(f"可用工具 ({len(tool_names)}): {', '.join(tool_names)}")
         return "\n".join(lines)
 
-    def _inject_knowledge_context(self, user_input: str) -> None:
-        """基于用户输入检索 L3 知识库，临时注入上下文。
+    def _ensure_session(self):
+        """懒构造 AgentSession 内核，复用 REPL 的同一 messages 历史对象。"""
+        from agent.core import (
+            AgentSession, TerminalRenderer, InteractiveApproval, RetrievalContextProvider,
+        )
+        if self._agent_session is not None:
+            return self._agent_session
+        event_path = Path.home() / ".sinan" / "repl_events" / "event.jsonl"
+        renderer = TerminalRenderer(
+            write=lambda s: print(s, end="", flush=True),
+            status=self._render_tool_status,
+            event_path=event_path,
+        )
+        provider = RetrievalContextProvider(
+            knowledge_base=self._knowledge_base, memory_store=self._memory_store,
+        )
+        self._agent_session = AgentSession(
+            self.client, self.tool_registry,
+            system_prompt=self._build_system_prompt(),
+            approval=InteractiveApproval(),
+            renderer=renderer,
+            context_provider=provider,
+            max_tool_depth=self._max_tool_depth,
+            stream=True,
+            messages=self.messages,   # 共享同一历史对象：蒸馏/compact/换模型共用
+        )
+        return self._agent_session
 
-        在 messages 中 user 消息之前插入一条 system 消息，
-        调用 _remove_knowledge_context() 清理。
-        """
-        if not self._knowledge_base:
-            return
-        try:
-            context = self._knowledge_base.build_context(
-                query=user_input, max_chars=2000
+    def _render_tool_status(self, name: str, status: str) -> None:
+        """工具状态 UI 回调：调用中用 TaskCard，其余走 print_tool_status。"""
+        # 注：新 bridge 的 status 为 "calling"/"done"/"rejected"（非旧的 "running"）
+        if status == "calling":
+            card = TaskCard(
+                name=name,
+                status=TaskStatus.RUNNING,
+                description=f"执行 {name}...",
             )
-            if context:
-                # 找到最后一条 user 消息的位置
-                insert_idx = len(self.messages)
-                for i in range(len(self.messages) - 1, -1, -1):
-                    if self.messages[i].get("role") == "user":
-                        insert_idx = i
-                        break
-                self.messages.insert(insert_idx, {
-                    "role": "system",
-                    "content": f"以下是与用户问题相关的知识库内容，请参考回答：\n\n{context}",
-                })
-                self._knowledge_injected = True
-        except Exception as exc:
-            logger.warning("L3 知识注入失败: %s", exc)
+            print(card.render())
+        else:
+            print_tool_status(self.console, name, status)
 
-    def _remove_knowledge_context(self) -> None:
-        """清理临时注入的知识上下文消息。"""
-        if getattr(self, "_knowledge_injected", False):
-            self.messages = [
-                m for m in self.messages
-                if not (m.get("role") == "system"
-                        and "以下是与用户问题相关的知识库内容" in m.get("content", ""))
-            ]
-            self._knowledge_injected = False
+    def _run_agent_turn(self, user_input: str):
+        """单轮处理：压缩上下文 → 驱动 AgentSession → 累加计数 + 持久化。"""
+        # 上下文压缩：就地修改，保持与 session 共享同一 messages 引用（不可重新赋值）
+        self.messages[:] = self.context_manager.compact(self.messages)
+        session = self._ensure_session()
+        result = session.send(user_input)
+        # session 已就地把 user/assistant/tool 消息写入共享 messages；此处仅累加计数与持久化
+        self._session_tool_calls += result.tool_calls_made
+        self._persist_message("user", user_input)
+        self._persist_message("assistant", result.final_text)
+        return result
 
     def _persist_message(self, role: str, content: str) -> None:
         """将消息持久化到 L2 会话数据库。"""
@@ -563,6 +578,7 @@ class SinanREPL:
 
             # 更新系统提示词中的运行时上下文（模型名等）
             self.messages[0]["content"] = self._build_system_prompt()
+            self._agent_session = None   # 换模型后用新 client + 已更新 system[0] 重建 session
 
             thinking_tag = f"  思考: {thinking_level}" if thinking_level != "off" else ""
             return f"\n  {BRAND_PRIMARY}✓ 已切换{RESET} → {model_name} ({new_provider}){thinking_tag}\n"
@@ -721,246 +737,6 @@ class SinanREPL:
         return True
 
     # ------------------------------------------------------------------
-    # 流式输出
-    # ------------------------------------------------------------------
-
-    def _stream_response(self) -> str:
-        """流式获取 LLM 响应并实时显示。
-
-        Returns:
-            完整的 assistant 回复文本。
-        """
-        full_text = ""
-        all_tool_calls: list[ToolCall] = []
-        tool_call_buffer: list[ToolCall] = []
-
-        try:
-            # 显示思考动画
-            with print_thinking_panel(self.console) as anim:
-                anim_started = True
-                for chunk in self.client.chat_stream(
-                    self.messages, tools=self.openai_tools
-                ):
-                    # 收到第一个 chunk（任意类型）时立即停动画
-                    if anim_started:
-                        anim.stop()
-                        anim_started = False
-                    
-                    if chunk.type == "text":
-                        print(chunk.content, end="", flush=True)
-                        full_text += chunk.content
-                    elif chunk.type == "tool_call" and chunk.tool_call:
-                        tool_call_buffer.append(chunk.tool_call)
-                    elif chunk.type == "done":
-                        break
-        except Exception as exc:
-            print_error(self.console, f"LLM 调用失败: {exc}")
-            return full_text
-
-        # 如果输出以换行结尾则不加额外换行
-        if full_text and not full_text.endswith("\n"):
-            print()
-
-        all_tool_calls = tool_call_buffer
-        self._pending_tool_calls = all_tool_calls
-        self._pending_text = full_text
-
-        return full_text
-
-    # ------------------------------------------------------------------
-    # 工具调用处理 (迭代式，带深度上限)
-    # ------------------------------------------------------------------
-
-    def _handle_tool_calls(self, text: str, tool_calls: list[ToolCall]) -> None:
-        """处理 LLM 返回的工具调用，执行并将结果回传。
-
-        使用迭代代替递归，防止工具调用链无限增长。
-        最大深度由 MAX_TOOL_DEPTH 控制。
-        """
-        depth = 0
-
-        # 计数工具调用（用于退出时蒸馏提议阈值判断）
-        self._session_tool_calls += len(tool_calls)
-
-        while tool_calls and depth < self.MAX_TOOL_DEPTH:
-            depth += 1
-
-            if not self.tool_registry:
-                break
-
-            # 将 assistant 消息 (含 tool_calls) 加入历史
-            self.messages.append(build_tool_call_message(text, tool_calls))
-
-            # 状态回调
-            def _status(name: str, status: str) -> None:
-                # 使用 TaskCard 显示工具状态
-                if status == "running":
-                    card = TaskCard(
-                        name=name,
-                        status=TaskStatus.RUNNING,
-                        description=f"执行 {name}..."
-                    )
-                    print(card.render())
-                else:
-                    print_tool_status(self.console, name, status)
-
-            # 审批回调：危险工具需要用户确认
-            def _approval(name: str, args: dict) -> bool:
-                import json as _json
-                args_str = _json.dumps(args, ensure_ascii=False, indent=2)
-                print(f"\n  {BRAND_ACCENT}⚠ 危险工具{RESET}: {name}")
-                print(f"  {DIM}参数: {args_str}{RESET}")
-                try:
-                    answer = input(f"  {BRAND_ACCENT}是否执行? [y/N]{RESET} ").strip().lower()
-                except (EOFError, KeyboardInterrupt):
-                    return False
-                return answer in ("y", "yes")
-
-            # 执行所有工具调用（直接调用，不经过任务系统以避免 dict→str 转换）
-            for tool_call in tool_calls:
-                msg = self._execute_single_tool(tool_call, _status, _approval)
-                self.messages.append(msg)
-
-            # 继续获取 LLM 的后续回复 (tool -> assistant)
-            print_assistant_header(self.console)
-            followup_text = self._stream_response()
-
-            # 获取新一轮的 tool_calls
-            next_tool_calls = (
-                self._pending_tool_calls
-                if hasattr(self, "_pending_tool_calls") and self._pending_tool_calls
-                else []
-            )
-
-            if next_tool_calls:
-                # followup 含后续工具调用 → 文本作为下一轮的 assistant content
-                text = followup_text
-                tool_calls = next_tool_calls
-            else:
-                # 无后续工具调用 → 将最终文本加入历史
-                if followup_text:
-                    self.messages.append({"role": "assistant", "content": followup_text})
-                    self._persist_message("assistant", followup_text)
-                return
-
-        # 达到深度上限
-        if tool_calls and depth >= self.MAX_TOOL_DEPTH:
-            print_info(
-                self.console,
-                f"工具调用轮次已达上限 ({self.MAX_TOOL_DEPTH})，已终止递归。",
-            )
-
-    def _execute_single_tool(self, tool_call: ToolCall, status_callback, approval_callback) -> dict:
-        """执行单个工具调用并返回结果消息。"""
-        name = tool_call.name
-        args = tool_call.arguments
-        start_time = __import__("time").time()
-        danger = self.tool_registry.get_danger_level(name).value
-
-        # 发射 ToolStartEvent
-        self._emit_tool_event("start", name, danger, args)
-
-        # 状态回调
-        status_callback(name, "running")
-
-        # 执行工具
-        approved = {"value": None}
-        prev_callback = getattr(self.tool_registry, "_confirm_callback", None)
-        prev_danger_confirm = getattr(self.tool_registry, "_danger_confirm", True)
-
-        def _confirm(tool_name: str, _level: str, arguments: dict) -> bool:
-            ok = approval_callback(tool_name, arguments)
-            approved["value"] = ok
-            return ok
-
-        try:
-            if self.tool_registry.is_dangerous(name):
-                self.tool_registry.set_confirm_callback(_confirm)
-                self.tool_registry.set_danger_confirm(True)
-                # 发射 ApprovalRequiredEvent
-                from agent.orchestration.events import ApprovalRequiredEvent
-                self._emit_tool_event_raw(ApprovalRequiredEvent(
-                    tool_name=name,
-                    danger_level=self.tool_registry.get_danger_level(name).value,
-                    arguments=args,
-                ))
-            result = self.tool_registry.call_tool(name, args)
-            status_callback(name, "rejected" if approved["value"] is False else "done")
-            # 发射 ToolDoneEvent
-            duration = (__import__("time").time() - start_time) * 1000.0
-            success = result.get("success", False)
-            self._emit_tool_event("done", name, danger, args,
-                                  success=success, duration=duration,
-                                  summary="ok" if success else result.get("error", "failed"))
-            # 压缩工具输出
-            output = self.message_compactor.compress_tool_result(
-                name, str(result), max_chars=400
-            )
-            return {
-                "role": "tool",
-                "tool_call_id": tool_call.id,
-                "name": name,
-                "content": output,
-            }
-        except Exception as exc:
-            status_callback(name, "error")
-            # 发射 ToolErrorEvent
-            self._emit_tool_event("error", name, "safe", args,
-                                  error=str(exc))
-            logger.exception("工具执行失败: %s", name)
-            output = self.message_compactor.compress_tool_result(
-                name, f"错误: {exc}", max_chars=200
-            )
-            return {
-                "role": "tool",
-                "tool_call_id": tool_call.id,
-                "name": name,
-                "content": output,
-            }
-        finally:
-            if hasattr(self.tool_registry, "set_confirm_callback"):
-                self.tool_registry.set_confirm_callback(prev_callback)
-            if hasattr(self.tool_registry, "set_danger_confirm"):
-                self.tool_registry.set_danger_confirm(prev_danger_confirm)
-
-    def _emit_tool_event(self, kind: str, name: str, danger: str,
-                         args: dict, **extra):
-        """Emit SinanEvent to event writer if available."""
-        e = None
-        if kind == "start":
-            from agent.orchestration.events import ToolStartEvent
-            e = ToolStartEvent(tool_name=name, danger_level=danger, arguments=args)
-        elif kind == "done":
-            from agent.orchestration.events import ToolDoneEvent
-            e = ToolDoneEvent(tool_name=name, danger_level=danger,
-                              success=extra.get("success", False),
-                              duration_ms=extra.get("duration", 0),
-                              result_summary=extra.get("summary", ""))
-        elif kind == "error":
-            from agent.orchestration.events import ToolErrorEvent
-            e = ToolErrorEvent(tool_name=name, error=extra.get("error", "unknown"))
-        if e:
-            self._write_event(e)
-
-    def _emit_tool_event_raw(self, event):
-        self._write_event(event)
-
-    def _write_event(self, event):
-        """Write SinanEvent to ~/.sinan/repl_events/event.jsonl."""
-        try:
-            from dataclasses import asdict
-            from pathlib import Path
-            from agent.orchestration.events import sanitize_event_payload
-            log_dir = Path.home() / ".sinan" / "repl_events"
-            log_dir.mkdir(parents=True, exist_ok=True)
-            d = sanitize_event_payload(asdict(event))
-            d.setdefault("timestamp", __import__("time").time())
-            with open(log_dir / "event.jsonl", "a") as f:
-                f.write(__import__("json").dumps(d, ensure_ascii=False, default=str) + "\n")
-        except Exception:
-            pass
-
-    # ------------------------------------------------------------------
     # 主循环
     # ------------------------------------------------------------------
 
@@ -1011,47 +787,16 @@ class SinanREPL:
                     )
                 continue
 
-            # L3 知识注入（临时，本轮有效）
-            self._inject_knowledge_context(user_input)
-
-            # 上下文压缩（在添加新消息前）
-            self.messages = self.context_manager.compact(self.messages)
-
-            # 用户消息加入历史
-            self.messages.append({"role": "user", "content": user_input})
-            self._persist_message("user", user_input)
-
-            # 启动思维会话
-            session_id = f"session-{datetime.now().timestamp()}"
-            self.thinking_chain = ThinkingChain(session_id=session_id)
-
-            # 消息间分隔 + 助手标签（仅在有实质内容时渲染）
+            # 消息间分隔 + 助手标签
             print_divider(self.console)
             print_assistant_header(self.console)
 
-            self._pending_tool_calls = []
-            self._pending_text = ""
-
+            # 委托 AgentSession 内核驱动本轮 LLM↔工具循环
             try:
-                text = self._stream_response()
+                self._run_agent_turn(user_input)
             except Exception as exc:
                 print_error(self.console, str(exc))
-                self.messages.pop()  # 移除失败的用户消息
-                self._remove_knowledge_context()
                 continue
-
-            # 清理临时知识上下文
-            self._remove_knowledge_context()
-
-            # 处理工具调用
-            tool_calls = self._pending_tool_calls
-            if tool_calls:
-                self._handle_tool_calls(text, tool_calls)
-            else:
-                # 纯文本回复，加入历史
-                if text:
-                    self.messages.append({"role": "assistant", "content": text})
-                    self._persist_message("assistant", text)
 
 
 # ---------------------------------------------------------------------------

@@ -157,7 +157,7 @@ class SinanRunController:
         self._emit("run_start", goal=goal, run_id=self.run_id)
 
         if self.llm_client is not None:
-            return self._run_with_agent_session(goal, task, started_at)
+            return self._run_with_agent_session(goal, task)
 
         orchestrator = AgentOrchestrator(
             registry=self.registry,
@@ -203,7 +203,7 @@ class SinanRunController:
         self._emit("run_done", run_id=self.run_id, success=success, run_dir=str(self.run_dir))
         return result
 
-    def _run_with_agent_session(self, goal, task, started_at):
+    def _run_with_agent_session(self, goal, task):
         from agent.core import AgentSession, TraceRenderer, AutoApprove, DenyDangerous
 
         approval = AutoApprove() if self.confirm_dangerous else DenyDangerous()

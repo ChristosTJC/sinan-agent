@@ -119,3 +119,23 @@ def test_execute_all_tool_calls_records_rejected_dangerous_call():
 
     assert records[0]["rejected"] is True
     assert records[0]["success"] is False
+
+
+def test_execute_all_tool_calls_guards_dangerous_tool_exception():
+    class RaisingRegistry(BridgeRegistry):
+        def call_tool(self, name, arguments):
+            raise RuntimeError("boom")
+
+    registry = RaisingRegistry()
+    calls = [ToolCall(id="danger-3", name="danger", arguments={})]
+
+    messages, records = execute_all_tool_calls(
+        calls, registry, approval=lambda name, args, level: True
+    )
+
+    # 危险工具执行抛异常时，被兜底为失败结果而非向上抛出，保证 tool_call 必有配对 tool 消息
+    assert len(messages) == 1
+    assert messages[0]["tool_call_id"] == "danger-3"
+    assert records[0]["success"] is False
+    assert records[0]["rejected"] is False
+    assert "执行异常" in records[0]["error"]

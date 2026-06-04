@@ -292,7 +292,10 @@ def execute_all_tool_calls(
         if status_callback:
             status_callback(tc.name, "calling")
         start = time.monotonic()
-        result, rejected = _execute_tool_call_with_approval(tc, registry, approval)
+        try:
+            result, rejected = _execute_tool_call_with_approval(tc, registry, approval)
+        except Exception as exc:  # noqa: BLE001 - 工具执行边界：异常回灌为失败结果，保证 tool_call 必有配对的 tool 消息
+            result, rejected = {"success": False, "error": f"执行异常: {exc}"}, False
         duration_ms = (time.monotonic() - start) * 1000
         result_str = format_tool_result(result, tc.name)
         if status_callback:

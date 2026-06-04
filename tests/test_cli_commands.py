@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from agent import cli
-from agent.llm.client import LLMResponse
+from agent.llm.client import LLMResponse, ToolCall
 
 
 class FakeRegistry:
@@ -33,19 +33,24 @@ class FakeRegistry:
 
         return DangerLevel.SAFE
 
+    def is_dangerous(self, _name: str) -> bool:
+        return False
+
 
 class FakeLLM:
     def __init__(self) -> None:
         self.calls = 0
+        self.model = "fake"
 
-    def chat(self, _messages: list[dict]):
+    def chat(self, _messages: list[dict], tools=None):
         self.calls += 1
         if self.calls == 1:
             return LLMResponse(
-                content='[{"step_id":1,"action":"扫描串口","tool":"scan_serial","args":{},"expected_outcome":"列出串口"}]',
+                content="",
+                tool_calls=[ToolCall(id="a", name="scan_serial", arguments={})],
                 model="fake",
             )
-        return LLMResponse(content='{"passed": true, "reason": "ok"}', model="fake")
+        return LLMResponse(content="已完成串口扫描", model="fake")
 
 
 def test_readme_build_command_is_accepted_and_calls_build_tool(monkeypatch):
@@ -192,7 +197,8 @@ def test_run_command_shows_visible_agent_loop(monkeypatch, tmp_path, capsys):
     assert (output_dir / "report.md").exists()
 
 
-def test_run_command_can_use_llm_client(monkeypatch, tmp_path, capsys):
+def test_run_command_can_use_llm_client(monkeypatch, tmp_path):
+    # 决策 X：传 --llm 即走 AgentSession（真 agent loop），由 LLM 自主驱动工具调用
     registry = FakeRegistry()
     llm = FakeLLM()
     monkeypatch.setenv("SINAN_HOME", str(tmp_path / "home"))
@@ -201,11 +207,10 @@ def test_run_command_can_use_llm_client(monkeypatch, tmp_path, capsys):
 
     rc = cli.main(["run", "执行 LLM 指定动作", "--llm", "--output-dir", str(tmp_path / "run-llm")])
 
-    out = capsys.readouterr().out
     assert rc == 0
-    assert "scan_serial" in out
     assert registry.calls == [("scan_serial", {})]
     assert llm.calls >= 1
+    assert (tmp_path / "run-llm" / "event.jsonl").exists()
 
 
 def test_diagnose_log_command_reads_file_and_prints_json(tmp_path, capsys):

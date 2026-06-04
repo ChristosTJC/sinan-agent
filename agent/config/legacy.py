@@ -68,6 +68,9 @@ DEFAULT_SETTINGS = {
         "http": "",
         "https": "",
     },
+    "tools": {
+        "max_tool_depth": 25,  # 单 turn 内 LLM↔工具最大循环轮数
+    },
     "debug": False,
 }
 

@@ -38,9 +38,12 @@ class FakeRegistry:
 
     def call_tool(self, name, arguments):
         self.calls.append((name, arguments))
-        if name in self._danger and getattr(self, "_confirm_callback", None):
-            if not self._confirm_callback(name, "high", arguments):
-                return {"success": False, "error": "用户拒绝执行"}
+        if (
+            name in self._danger
+            and getattr(self, "_confirm_callback", None)
+            and not self._confirm_callback(name, "high", arguments)
+        ):
+            return {"success": False, "error": "用户拒绝执行"}
         return {"success": True, "result": f"{name}-ok"}
 
     def set_confirm_callback(self, cb):
@@ -120,6 +123,29 @@ def test_tool_failure_feeds_back():
     assert result.final_text == "已知悉错误"
     # 失败结果作为 tool 消息回灌
     assert any(m.get("role") == "tool" for m in s.messages)
+
+
+def test_context_provider_inlines_into_user_and_does_not_accumulate_system():
+    class FixedProvider:
+        def provide(self, user_input):
+            return "[检索] 相关知识"
+
+    llm = FakeLLM([
+        LLMResponse(content="一", tool_calls=[]),
+        LLMResponse(content="二", tool_calls=[]),
+    ])
+    s = _session(llm, FakeRegistry(), context_provider=FixedProvider())
+    s.send("问题一")
+    s.send("问题二")
+
+    # 检索上下文不得作为持久 system 消息逐轮累积：始终只有构造时的 1 条 system
+    system_count = sum(1 for m in s.messages if m.get("role") == "system")
+    assert system_count == 1
+    # 检索上下文内联进对应轮次的 user 消息
+    user_msgs = [m for m in s.messages if m.get("role") == "user"]
+    assert len(user_msgs) == 2
+    assert all("[检索]" in m["content"] for m in user_msgs)
+    assert "问题一" in user_msgs[0]["content"]
 
 
 class RecordingRenderer:

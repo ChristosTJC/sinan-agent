@@ -70,10 +70,11 @@ class AgentSession:
         return self._messages
 
     def send(self, user_input: str) -> TurnResult:
+        # 检索上下文内联进本轮 user 消息：随对话滑窗自然淘汰，不作为持久 system 消息逐轮累积
         if self._context_provider is not None:
             ctx = self._context_provider.provide(user_input)
             if ctx:
-                self._messages.append({"role": "system", "content": ctx})
+                user_input = f"{ctx}\n\n---\n\n{user_input}"
         self._messages.append({"role": "user", "content": user_input})
 
         result = TurnResult()

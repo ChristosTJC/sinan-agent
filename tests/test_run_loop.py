@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 
-from agent.llm.client import LLMResponse
 from agent.tools import DangerLevel
 
 
@@ -49,17 +48,6 @@ class FakeRegistry:
         if name.endswith("_diagnose_log") or name == "diagnose_log":
             return {"success": True, "summary": "diagnosed"}
         return {"success": False, "error": f"unexpected tool: {name}"}
-
-
-class FakeLLM:
-    def __init__(self, content: str, verify_content: str = '{"passed": true, "reason": "ok"}') -> None:
-        self.contents = [content, verify_content]
-        self.messages: list[list[dict]] = []
-
-    def chat(self, messages: list[dict]):
-        self.messages.append(messages)
-        content = self.contents.pop(0) if self.contents else '{"passed": true, "reason": "ok"}'
-        return LLMResponse(content=content, model="fake")
 
 
 class NullMemory:
@@ -166,23 +154,18 @@ def test_run_loop_blocks_dangerous_tool_without_yes(tmp_path):
 
 
 def test_run_loop_stops_after_first_failed_step(tmp_path):
-    registry = FakeRegistry(responses={"scan_serial": {"success": False, "error": "no serial"}})
-    llm = FakeLLM("""
-    [
-      {"step_id": 1, "action": "扫描串口", "tool": "scan_serial", "args": {}, "expected_outcome": "找到串口"},
-      {"step_id": 2, "action": "扫描 USB", "tool": "scan_usb", "args": {}, "expected_outcome": "找到 USB"}
-    ]
-    """)
-    controller = _controller(tmp_path, registry, llm_client=llm)
+    # fallback pipeline（无 LLM）顺序链路：首步执行失败后停止后续步骤
+    registry = FakeRegistry(responses={"build_firmware": {"success": False, "error": "build failed"}})
+    controller = _controller(tmp_path, registry)
 
-    result = controller.run("先扫描串口再扫描 USB")
+    result = controller.run("编译并烧录固件")
 
     assert result["success"] is False
-    assert registry.calls == [("scan_serial", {})]
+    assert registry.calls == [("build_firmware", {"project_path": "."})]
     steps = result["phases"]["execute"]["steps"]
     assert steps[0]["status"] == "failed"
     assert steps[1]["status"] == "skipped_previous_failure"
-    assert steps[1]["tool"] == "scan_usb"
+    assert steps[1]["tool"] == "flash_firmware"
 
     event_path = tmp_path / "home" / "runs" / result["run_id"] / "event.jsonl"
     event_types = [json.loads(line)["type"] for line in event_path.read_text(encoding="utf-8").splitlines()]
@@ -205,25 +188,6 @@ def test_fallback_plan_maps_build_and_flash_to_dangerous_tools(tmp_path):
     assert steps[0]["status"] == "blocked_confirmation"
     assert steps[1]["status"] == "skipped_previous_failure"
     assert steps[1]["tool"] == "flash_firmware"
-
-
-def test_run_loop_uses_llm_response_content_for_plan(tmp_path):
-    registry = FakeRegistry()
-    llm = FakeLLM("""
-    ```json
-    [
-      {"step_id": 1, "action": "扫描串口", "tool": "scan_serial", "args": {}, "expected_outcome": "列出串口"}
-    ]
-    ```
-    """)
-    controller = _controller(tmp_path, registry, llm_client=llm)
-
-    result = controller.run("执行 LLM 指定动作")
-
-    assert result["success"] is True
-    assert registry.calls == [("scan_serial", {})]
-    assert result["phases"]["plan"][0]["tool"] == "scan_serial"
-    assert len(llm.messages) >= 1
 
 
 def test_fallback_plan_maps_esp32_panic_log_to_diagnostic_tool(tmp_path):

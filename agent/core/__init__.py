@@ -2,5 +2,15 @@
 from agent.core.approval import (
     ApprovalPolicy, AutoApprove, DenyDangerous, InteractiveApproval,
 )
+from agent.core.renderer import (
+    Renderer, NullRenderer, TraceRenderer, TerminalRenderer,
+)
+from agent.core.context import RetrievalContextProvider, TurnConsolidator
+from agent.core.session import AgentSession, TurnResult
 
-__all__ = ["ApprovalPolicy", "AutoApprove", "DenyDangerous", "InteractiveApproval"]
+__all__ = [
+    "ApprovalPolicy", "AutoApprove", "DenyDangerous", "InteractiveApproval",
+    "Renderer", "NullRenderer", "TraceRenderer", "TerminalRenderer",
+    "RetrievalContextProvider", "TurnConsolidator",
+    "AgentSession", "TurnResult",
+]

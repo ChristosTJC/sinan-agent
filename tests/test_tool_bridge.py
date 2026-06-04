@@ -78,12 +78,17 @@ def test_execute_all_tool_calls_preserves_order_for_parallel_safe_calls():
     ]
     statuses = []
 
-    messages = execute_all_tool_calls(calls, registry, status_callback=lambda name, status: statuses.append((name, status)))
+    messages, records = execute_all_tool_calls(
+        calls, registry, status_callback=lambda name, status: statuses.append((name, status))
+    )
 
     assert [message["tool_call_id"] for message in messages] == ["1", "2"]
     assert json.loads(messages[0]["content"])["result"] == "first"
     assert ("first", "calling") in statuses
     assert ("second", "done") in statuses
+    assert [r["name"] for r in records] == ["first", "second"]
+    assert all(r["success"] for r in records)
+    assert all(r["rejected"] is False for r in records)
 
 
 def test_execute_all_tool_calls_routes_dangerous_call_through_approval():
@@ -91,11 +96,26 @@ def test_execute_all_tool_calls_routes_dangerous_call_through_approval():
     calls = [ToolCall(id="danger-1", name="danger", arguments={"write": True})]
     approvals = []
 
-    messages = execute_all_tool_calls(
+    messages, records = execute_all_tool_calls(
         calls,
         registry,
-        approval_callback=lambda name, args: approvals.append((name, args)) or True,
+        approval=lambda name, args, level: approvals.append((name, args, level)) or True,
     )
 
-    assert approvals == [("danger", {"write": True})]
+    assert approvals[0][0] == "danger"
+    assert approvals[0][1] == {"write": True}
     assert json.loads(messages[0]["content"])["result"] == "approved"
+    assert records[0]["name"] == "danger"
+    assert records[0]["rejected"] is False
+
+
+def test_execute_all_tool_calls_records_rejected_dangerous_call():
+    registry = BridgeRegistry()
+    calls = [ToolCall(id="danger-2", name="danger", arguments={"write": True})]
+
+    messages, records = execute_all_tool_calls(
+        calls, registry, approval=lambda name, args, level: False
+    )
+
+    assert records[0]["rejected"] is True
+    assert records[0]["success"] is False

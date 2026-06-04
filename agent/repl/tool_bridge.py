@@ -13,10 +13,12 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Callable, Optional
 
 from agent.llm.client import ToolCall
+from agent.tools import DangerLevel
 
 logger = logging.getLogger(__name__)
 
@@ -85,23 +87,36 @@ def execute_tool_call(
 def _execute_tool_call_with_approval(
     tool_call: ToolCall,
     registry: Any,
-    approval_callback: Optional[Callable[[str, dict], bool]] = None,
-) -> dict[str, Any]:
-    """执行工具调用，并把外层审批传递给 registry 的危险门控。"""
+    approval: Optional[Callable[[str, dict, DangerLevel], bool]] = None,
+) -> tuple[dict[str, Any], bool]:
+    """执行危险工具调用，把外层审批（含 danger_level）接入 registry 门控。
+
+    Returns:
+        (result, rejected)。rejected=True 表示审批被拒、未真正执行。
+    """
     prev_callback = getattr(registry, "_confirm_callback", None)
     prev_danger_confirm = getattr(registry, "_danger_confirm", True)
+    rejected = {"value": False}
 
-    def _confirm(tool_name: str, _level: str, arguments: dict) -> bool:
-        if approval_callback is None:
+    def _confirm(tool_name: str, level: str, arguments: dict) -> bool:
+        if approval is None:
+            rejected["value"] = True
             return False
-        return approval_callback(tool_name, arguments)
+        try:
+            ok = approval(tool_name, arguments, DangerLevel(level))
+        except ValueError:
+            ok = approval(tool_name, arguments, DangerLevel.HIGH)
+        if not ok:
+            rejected["value"] = True
+        return ok
 
     try:
         if hasattr(registry, "set_confirm_callback"):
             registry.set_confirm_callback(_confirm)
         if hasattr(registry, "set_danger_confirm"):
             registry.set_danger_confirm(True)
-        return execute_tool_call(tool_call, registry)
+        result = execute_tool_call(tool_call, registry)
+        return result, rejected["value"]
     finally:
         if hasattr(registry, "set_confirm_callback"):
             registry.set_confirm_callback(prev_callback)
@@ -244,95 +259,87 @@ def build_tool_result_message(
 # ---------------------------------------------------------------------------
 
 
+def _danger_level_str(registry: Any, name: str) -> str:
+    if hasattr(registry, "get_danger_level"):
+        level = registry.get_danger_level(name)
+        return level.value if isinstance(level, DangerLevel) else str(level)
+    return DangerLevel.HIGH.value if registry.is_dangerous(name) else DangerLevel.SAFE.value
+
+
 def execute_all_tool_calls(
     tool_calls: list[ToolCall],
     registry: Any,
     status_callback: Optional[Any] = None,
-    approval_callback: Optional[Callable[[str, dict], bool]] = None,
-) -> list[dict]:
-    """批量执行工具调用并返回 tool result 消息列表。
+    approval: Optional[Callable[[str, dict, DangerLevel], bool]] = None,
+) -> tuple[list[dict], list[dict]]:
+    """批量执行工具调用，返回 (tool result 消息列表, 结构化 execution records)。
 
-    支持并行执行和危险工具审批。
-
-    Args:
-        tool_calls: LLM 返回的工具调用列表。
-        registry: ToolRegistry 实例。
-        status_callback: 可选的状态回调 ``callback(tool_name, status)``。
-        approval_callback: 可选的审批回调 ``callback(tool_name, args) -> bool``。
-            返回 True 表示批准，False 表示拒绝。
-            为 None 时自动批准所有工具。
-
-    Returns:
-        tool result 消息列表。
+    危险工具逐个审批 + 串行；安全工具并行。records 供上层（AgentSession）发事件。
     """
     if not tool_calls:
-        return []
+        return [], []
 
-    # 分离危险工具和安全工具
     dangerous_calls: list[ToolCall] = []
     safe_calls: list[ToolCall] = []
-
     for tc in tool_calls:
-        if registry.is_dangerous(tc.name):
-            dangerous_calls.append(tc)
-        else:
-            safe_calls.append(tc)
+        (dangerous_calls if registry.is_dangerous(tc.name) else safe_calls).append(tc)
 
     messages: list[dict] = []
+    records: dict[str, dict] = {}
 
-    # 危险工具：逐个审批 + 串行执行
+    # 危险工具：逐个审批 + 串行
     for tc in dangerous_calls:
         if status_callback:
             status_callback(tc.name, "calling")
-        result = _execute_tool_call_with_approval(tc, registry, approval_callback)
+        start = time.monotonic()
+        result, rejected = _execute_tool_call_with_approval(tc, registry, approval)
+        duration_ms = (time.monotonic() - start) * 1000
         result_str = format_tool_result(result, tc.name)
         if status_callback:
-            status_callback(
-                tc.name,
-                "rejected" if not result.get("success") and "拒绝" in result.get("error", "") else "done",
-            )
+            status_callback(tc.name, "rejected" if rejected else "done")
         messages.append(build_tool_result_message(tc.id, result_str))
+        records[tc.id] = {
+            "name": tc.name,
+            "success": bool(result.get("success")),
+            "duration_ms": duration_ms,
+            "danger_level": _danger_level_str(registry, tc.name),
+            "rejected": rejected,
+            "error": "" if result.get("success") else str(result.get("error", "")),
+        }
 
-    # 安全工具：并行执行
+    # 安全工具：并行
     if safe_calls:
-        if len(safe_calls) == 1:
-            # 单个工具直接执行
-            tc = safe_calls[0]
+        for tc in safe_calls:
             if status_callback:
                 status_callback(tc.name, "calling")
-            result = execute_tool_call(tc, registry)
+        timings: dict[str, float] = {}
+        results: dict[str, dict] = {}
+        with ThreadPoolExecutor(max_workers=min(len(safe_calls), 4)) as executor:
+            future_to_tc = {}
+            for tc in safe_calls:
+                timings[tc.id] = time.monotonic()
+                future_to_tc[executor.submit(execute_tool_call, tc, registry)] = tc
+            for future in as_completed(future_to_tc):
+                tc = future_to_tc[future]
+                try:
+                    results[tc.id] = future.result()
+                except Exception as exc:  # noqa: BLE001 - 工具执行边界，错误回灌 LLM
+                    results[tc.id] = {"success": False, "error": f"执行异常: {exc}"}
+        for tc in safe_calls:
+            result = results[tc.id]
+            duration_ms = (time.monotonic() - timings[tc.id]) * 1000
             result_str = format_tool_result(result, tc.name)
             if status_callback:
                 status_callback(tc.name, "done")
             messages.append(build_tool_result_message(tc.id, result_str))
-        else:
-            # 多个工具并行执行
-            # 先触发所有工具的 "calling" 状态显示
-            for tc in safe_calls:
-                if status_callback:
-                    status_callback(tc.name, "calling")
+            records[tc.id] = {
+                "name": tc.name,
+                "success": bool(result.get("success")),
+                "duration_ms": duration_ms,
+                "danger_level": _danger_level_str(registry, tc.name),
+                "rejected": False,
+                "error": "" if result.get("success") else str(result.get("error", "")),
+            }
 
-            results: dict[str, tuple[ToolCall, dict]] = {}
-            with ThreadPoolExecutor(max_workers=min(len(safe_calls), 4)) as executor:
-                future_to_tc = {
-                    executor.submit(execute_tool_call, tc, registry): tc
-                    for tc in safe_calls
-                }
-                for future in as_completed(future_to_tc):
-                    tc = future_to_tc[future]
-                    try:
-                        result = future.result()
-                    except Exception as exc:
-                        result = {"success": False, "error": f"执行异常: {exc}"}
-                    results[tc.id] = (tc, result)
-
-            # 按原始顺序生成结果消息
-            for tc in safe_calls:
-                if tc.id in results:
-                    _, result = results[tc.id]
-                    result_str = format_tool_result(result, tc.name)
-                    if status_callback:
-                        status_callback(tc.name, "done")
-                    messages.append(build_tool_result_message(tc.id, result_str))
-
-    return messages
+    ordered = [tc.id for tc in tool_calls]
+    return messages, [records[i] for i in ordered if i in records]

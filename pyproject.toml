@@ -42,6 +42,11 @@ jsonschema = ["jsonschema>=4.0"]
 [project.scripts]
 sinan = "agent.cli:main"
 
+[tool.setuptools]
+# 子包 agent.config 的数据文件经验证无法经 package-data 打进 wheel，
+# 改用 include-package-data + MANIFEST.in 精确纳入 config.defaults.yaml。
+include-package-data = true
+
 [tool.setuptools.packages.find]
 include = ["agent*", "knowledge*", "board_knowledge*", "skills*"]
 

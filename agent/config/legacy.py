@@ -3,7 +3,7 @@
 
 从多个来源加载配置,支持三级优先级:
 1. ~/.sinan/settings.json (用户覆盖)
-2. 项目根目录的 config.defaults.yaml (项目默认)
+2. 随包分发的 config.defaults.yaml (项目默认)
 3. DEFAULT_SETTINGS (硬编码兜底)
 
 支持的配置:
@@ -38,9 +38,8 @@ def get_sinan_home() -> Path:
 SINAN_HOME = get_sinan_home()
 SETTINGS_FILE = SINAN_HOME / "settings.json"
 
-# 项目根目录 (用于加载 config.defaults.yaml)
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-PROJECT_CONFIG_FILE = PROJECT_ROOT / "config.defaults.yaml"
+# 项目默认配置，随包分发（与本模块同目录），保证 pip/wheel 安装也能加载
+PROJECT_CONFIG_FILE = Path(__file__).resolve().parent / "config.defaults.yaml"
 
 # 默认配置 (参考 Claude Code 风格)
 # availableModels[0] 即为启动默认模型

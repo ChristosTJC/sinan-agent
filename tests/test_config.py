@@ -233,11 +233,16 @@ class TestConfigExtractors:
 class TestProjectConfigToolsContract:
     """#2: 修复后 config.defaults.yaml 应被加载且 tools.* 精确生效。"""
 
-    def test_project_config_file_points_to_repo_root(self):
+    def test_project_config_file_shipped_inside_package(self):
+        # 配置文件必须随包分发：与 legacy.py 同目录 (agent/config/)。
+        # 放在 repo 根目录时 pip/wheel 安装不会打包它，项目默认层静默失效。
+        from agent.config import legacy
         from agent.config.legacy import PROJECT_CONFIG_FILE
         assert PROJECT_CONFIG_FILE.name == "config.defaults.yaml"
         assert PROJECT_CONFIG_FILE.exists()
-        assert (PROJECT_CONFIG_FILE.parent / "agent").is_dir()
+        assert PROJECT_CONFIG_FILE.parent == Path(legacy.__file__).resolve().parent
+        assert PROJECT_CONFIG_FILE.parent.name == "config"
+        assert PROJECT_CONFIG_FILE.parent.parent.name == "agent"
 
     def test_tools_config_exact_values_from_yaml(self):
         # patch SETTINGS_FILE 到不存在，避免本机 ~/.sinan/settings.json 覆盖 project yaml

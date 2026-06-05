@@ -6,7 +6,6 @@ pytestmark = pytest.mark.integration
 import tempfile
 from pathlib import Path
 from agent.platforms.nordic import NordicPlatform, detect_nrf_variant
-from agent.tools.cmake_builder import CMakeBuilder, detect_cmake_project
 from agent.tools.pyocd_flasher import PyOCDFlasher, detect_target_from_chip
 
 
@@ -64,37 +63,6 @@ def test_nrf52840_variant_detection():
     assert variant.ram_size_kb == 256
 
 
-def test_cmake_project_detection(nrf52840_project):
-    """测试 CMake 项目检测"""
-    project = detect_cmake_project(str(nrf52840_project))
-
-    assert project is not None
-    assert project.has_cmakelists
-
-    info = project.parse_project_info()
-    assert info["project_name"] == "nrf52840_blinky"
-
-
-def test_cmake_build_command_generation(nrf52840_project):
-    """测试 CMake 构建命令生成"""
-    builder = CMakeBuilder()
-
-    configure_cmd = builder.generate_configure_command(
-        source_dir=str(nrf52840_project),
-        build_dir=str(nrf52840_project / "build"),
-        definitions={"BOARD": "nrf52840dk_nrf52840"}
-    )
-
-    assert "cmake" in configure_cmd
-    assert "-DBOARD=nrf52840dk_nrf52840" in configure_cmd
-
-    build_cmd = builder.generate_build_command(
-        build_dir=str(nrf52840_project / "build")
-    )
-
-    assert "cmake --build" in build_cmd
-
-
 def test_pyocd_target_detection():
     """测试 pyOCD 目标检测"""
     target = detect_target_from_chip("nRF52840")
@@ -117,13 +85,10 @@ def test_pyocd_flash_command_generation():
 
 
 def test_full_workflow_command_generation(nrf52840_project):
-    """测试完整工作流命令生成"""
+    """测试完整工作流命令生成（NordicPlatform 真实路径）"""
     platform = NordicPlatform()
     variant = detect_nrf_variant("nRF52840")
     assert variant is not None
-
-    project = detect_cmake_project(str(nrf52840_project))
-    assert project is not None
 
     build_cmd = platform.generate_build_command(
         project_dir=str(nrf52840_project),

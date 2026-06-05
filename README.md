@@ -2,7 +2,7 @@
 
 司南 (Sinán) 是面向嵌入式开发者的智能体工作台，提供知识库检索、板卡资料管理、串口/USB 工具、固件构建、固件烧录和多轮调试记忆。
 
-当前状态：Alpha。已完成 no-hardware smoke、dry-run 端到端验证、硬件黄金路径模拟和 604 个单元/集成测试，覆盖率达 64%。真实板卡 HIL 闭环验证待社区贡献或后续硬件环境补齐——欢迎插上板卡跑 `sinan run` 反馈结果。定位：**ready for hardware validation**。
+当前状态：Alpha。已完成 no-hardware smoke、dry-run 端到端验证、硬件黄金路径模拟和 585 个单元/集成测试，覆盖率达 63%。真实板卡 HIL 闭环验证待社区贡献或后续硬件环境补齐——欢迎插上板卡跑 `sinan run` 反馈结果。定位：**ready for hardware validation**。
 
 ## 快速开始
 
@@ -189,7 +189,10 @@ tests/             单元测试和集成路径测试
 
 ## 开发
 
+开发/贡献者请用可编辑安装，避免 `sinan` console script 跑到旧的全局安装副本；若 `pip install -e .` 报 `/usr/local` 权限错（旧版 pip 构建隔离回退到 legacy `develop` 所致），加 `--no-build-isolation`：
+
 ```bash
+python3 -m pip install -e . --no-build-isolation
 python -m pip install ".[dev]"
 python -m ruff check .
 python -m pytest -q

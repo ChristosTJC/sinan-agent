@@ -223,3 +223,35 @@ class TestConfigExtractors:
         settings = {"tools": {"serial": {"max_bytes": 5120}}}
         result = get_tools_config(settings)
         assert result == {"serial": {"max_bytes": 5120}}
+
+
+# ---------------------------------------------------------------------------
+# #2: config.defaults.yaml 路径与 tools.* 契约
+# ---------------------------------------------------------------------------
+
+
+class TestProjectConfigToolsContract:
+    """#2: 修复后 config.defaults.yaml 应被加载且 tools.* 精确生效。"""
+
+    def test_project_config_file_points_to_repo_root(self):
+        from agent.config.legacy import PROJECT_CONFIG_FILE
+        assert PROJECT_CONFIG_FILE.name == "config.defaults.yaml"
+        assert PROJECT_CONFIG_FILE.exists()
+        assert (PROJECT_CONFIG_FILE.parent / "agent").is_dir()
+
+    def test_tools_config_exact_values_from_yaml(self):
+        # patch SETTINGS_FILE 到不存在，避免本机 ~/.sinan/settings.json 覆盖 project yaml
+        with mock.patch("agent.config.legacy.SETTINGS_FILE", Path("/nonexistent")):
+            tools = get_tools_config()
+        assert tools["serial"]["max_bytes"] == 10240
+        assert tools["serial"]["max_duration_sec"] == 30
+        assert tools["device_node"]["default_port"] == 5555
+        assert tools["device_node"]["timeout_sec"] == 5.0
+        assert tools["max_tool_depth"] == 25
+
+    def test_dead_keys_removed(self):
+        with mock.patch("agent.config.legacy.SETTINGS_FILE", Path("/nonexistent")):
+            project = load_project_config()
+        assert "platforms" not in project
+        assert "build_systems" not in project
+        assert "flash_tools" not in project

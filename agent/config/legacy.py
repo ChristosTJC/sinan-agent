@@ -34,7 +34,7 @@ SINAN_HOME = Path(os.environ.get("SINAN_HOME", Path.home() / ".sinan"))
 SETTINGS_FILE = SINAN_HOME / "settings.json"
 
 # 项目根目录 (用于加载 config.defaults.yaml)
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 PROJECT_CONFIG_FILE = PROJECT_ROOT / "config.defaults.yaml"
 
 # 默认配置 (参考 Claude Code 风格)

@@ -1,33 +1,10 @@
-platforms:
-  stm32:
-    enabled: true
-    default_build_system: make
-    default_flash_tool: openocd
-
-  nordic:
-    enabled: true
-    default_build_system: cmake
-    default_flash_tool: pyocd
-    sdk_path: null
-
-build_systems:
-  make:
-    enabled: true
-    parallel_jobs: 4
-
-  cmake:
-    enabled: true
-    parallel_jobs: 4
-    generator: "Unix Makefiles"
-
-flash_tools:
-  openocd:
-    enabled: true
-    interface: "stlink"
-
-  pyocd:
-    enabled: true
-    frequency: 1000000
-
-  nrfjprog:
-    enabled: false
+# 司南项目默认配置（最低优先级，被 ~/.sinan/settings.json 覆盖）
+# 仅包含代码实际读取的 tools.* 键；平台默认见 agent/platforms/*.py
+tools:
+  serial:
+    max_bytes: 10240
+    max_duration_sec: 30
+  device_node:
+    default_port: 5555
+    timeout_sec: 5.0
+  max_tool_depth: 25

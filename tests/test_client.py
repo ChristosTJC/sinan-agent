@@ -27,6 +27,62 @@ from agent.llm.client import (
 
 
 # ---------------------------------------------------------------------------
+# Claude tool message conversion
+# ---------------------------------------------------------------------------
+
+
+class TestClaudeToolMessageConversion:
+    def test_consecutive_tool_results_are_grouped_into_one_user_message(self):
+        client = ClaudeClient(model="deepseek-v4-pro")
+        messages = [
+            {"role": "system", "content": "sys"},
+            {"role": "user", "content": "检查物理连接"},
+            {
+                "role": "assistant",
+                "content": "我来检查。",
+                "tool_calls": [
+                    {
+                        "id": "call-1",
+                        "type": "function",
+                        "function": {
+                            "name": "shell_command",
+                            "arguments": '{"command": "lsusb"}',
+                        },
+                    },
+                    {
+                        "id": "call-2",
+                        "type": "function",
+                        "function": {
+                            "name": "shell_command",
+                            "arguments": '{"command": "dmesg | tail -30"}',
+                        },
+                    },
+                ],
+            },
+            {"role": "tool", "tool_call_id": "call-1", "content": '{"success": true}'},
+            {"role": "tool", "tool_call_id": "call-2", "content": '{"success": true}'},
+        ]
+
+        system, claude_messages = client._to_claude_messages(messages)
+
+        assert system == "sys"
+        assert len(claude_messages) == 3
+        assert claude_messages[2]["role"] == "user"
+        assert claude_messages[2]["content"] == [
+            {
+                "type": "tool_result",
+                "tool_use_id": "call-1",
+                "content": '{"success": true}',
+            },
+            {
+                "type": "tool_result",
+                "tool_use_id": "call-2",
+                "content": '{"success": true}',
+            },
+        ]
+
+
+# ---------------------------------------------------------------------------
 # 继承关系
 # ---------------------------------------------------------------------------
 

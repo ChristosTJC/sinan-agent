@@ -150,14 +150,26 @@ class ClaudeClient(LLMClient):
                 system = msg.get("content", "")
             elif role == "tool":
                 # OpenAI tool result -> Claude tool_result
-                claude_msgs.append({
-                    "role": "user",
-                    "content": [{
-                        "type": "tool_result",
-                        "tool_use_id": msg.get("tool_call_id", ""),
-                        "content": msg.get("content", ""),
-                    }],
-                })
+                tool_result = {
+                    "type": "tool_result",
+                    "tool_use_id": msg.get("tool_call_id", ""),
+                    "content": msg.get("content", ""),
+                }
+                if (
+                    claude_msgs
+                    and claude_msgs[-1].get("role") == "user"
+                    and isinstance(claude_msgs[-1].get("content"), list)
+                    and all(
+                        isinstance(block, dict) and block.get("type") == "tool_result"
+                        for block in claude_msgs[-1]["content"]
+                    )
+                ):
+                    claude_msgs[-1]["content"].append(tool_result)
+                else:
+                    claude_msgs.append({
+                        "role": "user",
+                        "content": [tool_result],
+                    })
             elif role == "assistant" and msg.get("tool_calls"):
                 # 带 tool_calls 的 assistant 消息
                 content: list[dict] = []

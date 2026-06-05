@@ -189,7 +189,10 @@ tests/             单元测试和集成路径测试
 
 ## 开发
 
+开发/贡献者请用可编辑安装，避免 `sinan` console script 跑到旧的全局安装副本；若 `pip install -e .` 报 `/usr/local` 权限错（旧版 pip 构建隔离回退到 legacy `develop` 所致），加 `--no-build-isolation`：
+
 ```bash
+python3 -m pip install -e . --no-build-isolation
 python -m pip install ".[dev]"
 python -m ruff check .
 python -m pytest -q

@@ -241,6 +241,20 @@ class DeviceNodeClient(JsonlRpcClient):
                 "timeout_sec": 5.0,
             }
 
+    def __init__(
+        self,
+        host: str,
+        port: Optional[int] = None,
+        timeout_sec: Optional[float] = None,
+    ) -> None:
+        """端口/超时缺省时从 config.defaults.yaml 的 tools.device_node 读取。"""
+        cfg = self._get_default_config()
+        super().__init__(
+            host,
+            cfg["default_port"] if port is None else port,
+            cfg["timeout_sec"] if timeout_sec is None else timeout_sec,
+        )
+
     def hello(self) -> dict:
         """向设备发送 ``hello`` 请求，获取设备身份信息。
 
@@ -344,7 +358,7 @@ class ConnectionDiagnostics:
         Returns:
             设备响应 dict，失败时含 ``"error"`` 字段。
         """
-        client = DeviceNodeClient(host, port, timeout_sec=5.0)
+        client = DeviceNodeClient(host, port)
         if not client.connect():
             return {"error": f"无法建立 TCP 连接到 {host}:{port}"}
 

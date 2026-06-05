@@ -639,11 +639,11 @@ class ToolRegistry:
 
         # ── device_probe ──
         try:
-            from agent.tools.device_bridge import ConnectionDiagnostics
+            from agent.tools.device_bridge import ConnectionDiagnostics, DeviceNodeClient
 
             def _device_probe_handler(arguments: dict) -> dict:
                 host = arguments.get("host", "")
-                port = int(arguments.get("port", 5555))
+                port = int(arguments.get("port", DeviceNodeClient._get_default_config()["default_port"]))
                 if not host:
                     return {"success": False, "error": "缺少参数: host"}
 
@@ -663,7 +663,7 @@ class ToolRegistry:
                 description="探测设备节点连通性",
                 parameters={
                     "host": {"type": "string", "description": "设备 IP 或主机名", "required": True},
-                    "port": {"type": "integer", "description": "设备端口 (默认 5555)", "required": False},
+                    "port": {"type": "integer", "description": "设备端口 (默认来自 tools.device_node.default_port，内置 5555)", "required": False},
                 },
             )
         except ImportError as exc:
@@ -675,7 +675,7 @@ class ToolRegistry:
 
             def _device_call_handler(arguments: dict) -> dict:
                 host = arguments.get("host", "")
-                port = int(arguments.get("port", 5555))
+                port = int(arguments.get("port", DeviceNodeClient._get_default_config()["default_port"]))
                 method = arguments.get("method", "")
                 params = arguments.get("params", {})
                 if not host:
@@ -695,7 +695,7 @@ class ToolRegistry:
                 danger_level=DangerLevel.HIGH, timeout_sec=30.0,
                 parameters={
                     "host": {"type": "string", "description": "设备 IP 或主机名", "required": True},
-                    "port": {"type": "integer", "description": "设备端口 (默认 5555)", "required": False},
+                    "port": {"type": "integer", "description": "设备端口 (默认来自 tools.device_node.default_port，内置 5555)", "required": False},
                     "method": {"type": "string", "description": "远程 RPC 方法名", "required": True},
                     "params": {"type": "object", "description": "方法参数字典", "required": False},
                 },

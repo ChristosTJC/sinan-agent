@@ -289,7 +289,7 @@ def get_tools_config(settings: Optional[dict[str, Any]] = None) -> dict[str, Any
                     "max_bytes": 10240
                 },
                 "device_node": {
-                    "default_port": 8765,
+                    "default_port": 5555,
                     "timeout_sec": 5.0
                 }
             }

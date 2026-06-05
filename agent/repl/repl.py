@@ -28,7 +28,7 @@ from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.formatted_text import HTML
 
 from agent.llm.client import LLMClient, create_client, detect_provider
-from agent.config import apply_settings, get_model_config, create_default_config, get_tools_config
+from agent.config import apply_settings, get_model_config, create_default_config, get_tools_config, get_sinan_home
 from agent.repl.commands import CommandRegistry, SlashCompleter, build_default_commands
 from agent.repl.tool_bridge import (
     tools_to_openai_format,
@@ -131,7 +131,7 @@ class SinanREPL:
             self.client: LLMClient = create_client(self.provider, model_name, params=model_params)
 
         # ── 子系统初始化 ──
-        self._sinan_home = Path.home() / ".sinan"
+        self._sinan_home = get_sinan_home()
         self._memory_store = self._init_memory_store()
         self._skill_loader = self._init_skill_loader()
         self._knowledge_base = self._init_knowledge_base()
@@ -297,7 +297,7 @@ class SinanREPL:
         )
         if self._agent_session is not None:
             return self._agent_session
-        event_path = Path.home() / ".sinan" / "repl_events" / "event.jsonl"
+        event_path = get_sinan_home() / "repl_events" / "event.jsonl"
         renderer = TerminalRenderer(
             write=lambda s: print(s, end="", flush=True),
             status=self._render_tool_status,

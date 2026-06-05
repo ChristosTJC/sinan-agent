@@ -12,12 +12,9 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+from agent.config import get_sinan_home
+
 logger = logging.getLogger(__name__)
-
-def get_sinan_home() -> Path:
-    """返回运行时司南数据目录，优先使用 SINAN_HOME 环境变量。"""
-    return Path(os.environ.get("SINAN_HOME", str(Path.home() / ".sinan"))).expanduser()
-
 
 SINAN_HOME = get_sinan_home()
 

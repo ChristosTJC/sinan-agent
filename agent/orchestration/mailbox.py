@@ -12,13 +12,15 @@ import time
 from pathlib import Path
 from typing import Optional
 
+from agent.config import get_sinan_home
+
 
 class Mailbox:
     TEAM_LEAD_NAME = "team-lead"
 
     def __init__(self, team_name: str = "default", base_dir: Optional[Path] = None):
         self._team_name = team_name
-        self._base_dir = base_dir or (Path.home() / ".sinan" / "teams")
+        self._base_dir = base_dir or (get_sinan_home() / "teams")
         self._inbox_dir = self._base_dir / team_name / "inboxes"
         self._inbox_dir.mkdir(parents=True, exist_ok=True)
         self._locks: dict[str, threading.Lock] = {}

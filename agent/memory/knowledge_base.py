@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Optional, List, Dict, Any
 
 from agent.memory.knowledge_index import KnowledgeIndex, DocumentType
+from agent.config import get_sinan_home
 
 # ---------------------------------------------------------------------------
 # 常量
@@ -69,7 +70,7 @@ class KnowledgeBase:
 
         self.user_kb_dir = Path(user_kb_dir) if user_kb_dir else None
 
-        index_root = Path.home() / ".sinan" / "knowledge_index"
+        index_root = get_sinan_home() / "knowledge_index"
         index_root.mkdir(parents=True, exist_ok=True)
 
         try:

@@ -18,6 +18,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+from agent.config import get_sinan_home
+
 logger = logging.getLogger(__name__)
 
 
@@ -58,7 +60,7 @@ class AgentOrchestrator:
 
         self._tasks: dict[str, dict] = {}
         self._session_id = session_db.create_session(project=session_db.detect_project())
-        self._memories_dir = memories_dir or Path.home() / ".sinan" / "memories"
+        self._memories_dir = memories_dir or get_sinan_home() / "memories"
 
     # ------------------------------------------------------------------
     # 主循环

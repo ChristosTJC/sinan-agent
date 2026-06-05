@@ -23,6 +23,7 @@ from typing import Any, Callable, Optional
 from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.document import Document
 
+from agent.config import get_sinan_home
 from agent.repl.theme import (
     BRAND_PRIMARY, BRAND_ACCENT, DIM, RESET,
     TEXT_SECONDARY, TEXT_SUCCESS, TEXT_INFO, ROLE_TOOL,
@@ -237,7 +238,7 @@ def build_default_commands() -> CommandRegistry:
     def _memory(_args: str) -> str:
         try:
             from agent.memory.core_memory import MemoryStore
-            sinan_home = Path.home() / ".sinan"
+            sinan_home = get_sinan_home()
             store = MemoryStore()
             store.load_from_disk(sinan_home / "memories")
 
@@ -307,7 +308,7 @@ def build_default_commands() -> CommandRegistry:
             try:
                 from agent.memory.knowledge_base import KnowledgeBase
                 project_kb_dir = Path(__file__).resolve().parent.parent.parent / "knowledge"
-                user_kb_dir = Path.home() / ".sinan" / "knowledge"
+                user_kb_dir = get_sinan_home() / "knowledge"
                 kb = KnowledgeBase(kb_dir=project_kb_dir, user_kb_dir=user_kb_dir)
                 cats = kb.list_categories()
                 lines = ["", f"  {BRAND_PRIMARY}{BOLD}知识库类别{RESET}", ""]
@@ -328,7 +329,7 @@ def build_default_commands() -> CommandRegistry:
         try:
             from agent.memory.knowledge_base import KnowledgeBase
             project_kb_dir = Path(__file__).resolve().parent.parent.parent / "knowledge"
-            user_kb_dir = Path.home() / ".sinan" / "knowledge"
+            user_kb_dir = get_sinan_home() / "knowledge"
             kb = KnowledgeBase(kb_dir=project_kb_dir, user_kb_dir=user_kb_dir)
             results = kb.semantic_search(args.strip())
             lines = ["", f"  {BRAND_PRIMARY}搜索{RESET} \"{BRAND_ACCENT}{args.strip()}{RESET}\"", ""]

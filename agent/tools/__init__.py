@@ -112,8 +112,8 @@ class AuditLogger:
         if log_dir:
             self._log_dir = _Path(log_dir)
         else:
-            sinan_home = _os.environ.get("SINAN_HOME", str(_Path.home() / ".sinan"))
-            self._log_dir = _Path(sinan_home) / "audit"
+            from agent.config import get_sinan_home
+            self._log_dir = get_sinan_home() / "audit"
         try:
             self._log_dir.mkdir(parents=True, exist_ok=True)
         except (OSError, PermissionError):
@@ -1055,8 +1055,8 @@ class ToolRegistry:
             sinan_home:     司南数据目录，默认 ~/.sinan/。
         """
         if sinan_home is None:
-            from pathlib import Path
-            sinan_home = Path.home() / ".sinan"
+            from agent.config import get_sinan_home
+            sinan_home = get_sinan_home()
 
         if self._memory_tools_registered:
             logger.debug("记忆工具已注册，跳过重复注册")

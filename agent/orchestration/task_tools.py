@@ -14,10 +14,11 @@ from agent.orchestration.task_types import (
     is_terminal_status,
 )
 from agent.orchestration.task_output import TaskOutput
+from agent.config import get_sinan_home
 
 
 def _tasks_dir() -> Path:
-    p = Path.home() / ".sinan" / "tasks"
+    p = get_sinan_home() / "tasks"
     p.mkdir(parents=True, exist_ok=True)
     return p
 

@@ -5,6 +5,8 @@ from contextlib import suppress
 from pathlib import Path
 from typing import Optional
 
+from agent.config import get_sinan_home
+
 
 class TaskOutput:
     DEFAULT_MAX_MEMORY = 8 * 1024 * 1024  # 8MB
@@ -16,7 +18,7 @@ class TaskOutput:
         max_memory: int = DEFAULT_MAX_MEMORY,
     ):
         self.task_id = task_id
-        self._output_dir = output_dir or (Path.home() / ".sinan" / "task_output")
+        self._output_dir = output_dir or (get_sinan_home() / "task_output")
         self._output_dir.mkdir(parents=True, exist_ok=True)
         self._output_file = self._output_dir / f"{task_id}.out"
         self._max_memory = max_memory

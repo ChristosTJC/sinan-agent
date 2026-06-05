@@ -33,6 +33,8 @@ from typing import Optional
 
 import yaml
 
+from agent.config import get_sinan_home
+
 logger = logging.getLogger(__name__)
 
 # 技能目录默认位置 (项目根目录/skills)
@@ -93,7 +95,7 @@ class SkillLoader:
         user_skills_dir: Optional[Path] = None,
     ) -> None:
         self._skills_dir = skills_dir or _DEFAULT_SKILLS_DIR
-        self._user_skills_dir = user_skills_dir or (Path.home() / ".sinan" / "skills")
+        self._user_skills_dir = user_skills_dir or (get_sinan_home() / "skills")
         self._skills: dict[str, Skill] = {}
         self._loaded = False
 

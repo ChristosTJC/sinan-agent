@@ -30,7 +30,12 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-SINAN_HOME = Path(os.environ.get("SINAN_HOME", Path.home() / ".sinan"))
+def get_sinan_home() -> Path:
+    """运行时司南数据目录，每次读 SINAN_HOME 环境变量，缺省 ~/.sinan。"""
+    return Path(os.environ.get("SINAN_HOME", str(Path.home() / ".sinan"))).expanduser()
+
+
+SINAN_HOME = get_sinan_home()
 SETTINGS_FILE = SINAN_HOME / "settings.json"
 
 # 项目根目录 (用于加载 config.defaults.yaml)

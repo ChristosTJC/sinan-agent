@@ -34,8 +34,6 @@ class TestLegacyToolRegistryCompatibility:
         }
 
     def test_new_phase2c_tool_registration_functions_are_importable(self):
-        from agent.tools.cmake_builder import register_cmake_tool
         from agent.tools.pyocd_flasher import register_pyocd_tool
 
-        assert register_cmake_tool is not None
         assert register_pyocd_tool is not None

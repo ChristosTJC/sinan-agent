@@ -103,3 +103,92 @@ def test_non_skill_proposal_is_not_skill_proposal():
     )
 
     assert not is_skill_proposal(proposal)
+
+
+def test_example_only_section_does_not_fallback_to_steps():
+    from agent.distill.distiller import Proposal
+    from agent.distill.quality_scorer import to_skill_proposal
+
+    proposal = Proposal(
+        type="new_skill",
+        name="uart-monitor-command",
+        description="用于 UART 监听命令复用的记录，当前只有命令示例，没有形成可执行排查步骤。",
+        content="## 示例\n- python3 -m agent.cli monitor --port /dev/ttyUSB0 --duration 5\n",
+        reason="记录命令示例",
+    )
+
+    skill = to_skill_proposal(proposal)
+
+    assert skill.steps == []
+    assert skill.examples == ["python3 -m agent.cli monitor --port /dev/ttyUSB0 --duration 5"]
+
+
+def test_quality_scorer_rejects_example_only_distill_proposal():
+    from agent.distill.distiller import Proposal
+    from agent.distill.quality_scorer import QualityScorer
+
+    proposal = Proposal(
+        type="new_skill",
+        name="uart-monitor-command",
+        description="用于 UART 监听命令复用的记录，当前只有命令示例，没有形成可执行排查步骤。",
+        content="## 示例\n- python3 -m agent.cli monitor --port /dev/ttyUSB0 --duration 5\n",
+        reason="记录命令示例",
+    )
+
+    scorer = QualityScorer()
+    report = scorer.score_distill_proposal(proposal)
+
+    assert report.total_score < scorer.threshold
+    assert report.issues
+
+
+def test_plain_list_without_headings_falls_back_to_steps():
+    from agent.distill.distiller import Proposal
+    from agent.distill.quality_scorer import to_skill_proposal
+
+    proposal = Proposal(
+        type="new_skill",
+        name="spi-debug",
+        description="用于 SPI 总线异常时复用的系统化排查流程。",
+        content=(
+            "1. 确认 MOSI/MISO/SCLK/CS 引脚映射正确\n"
+            "2. 使用逻辑分析仪检查 CPOL 和 CPHA 配置\n"
+            "- 降低 SPI 时钟后重新读取设备 ID\n"
+        ),
+        reason="排查流程可复用",
+    )
+
+    skill = to_skill_proposal(proposal)
+
+    assert skill.steps == [
+        "确认 MOSI/MISO/SCLK/CS 引脚映射正确",
+        "使用逻辑分析仪检查 CPOL 和 CPHA 配置",
+        "降低 SPI 时钟后重新读取设备 ID",
+    ]
+
+
+def test_to_skill_proposal_accepts_tolerant_heading_forms():
+    from agent.distill.distiller import Proposal
+    from agent.distill.quality_scorer import to_skill_proposal
+
+    proposal = Proposal(
+        type="new_skill",
+        name="can-bus-debug",
+        description="用于 CAN 总线异常时复用的系统化排查流程，覆盖终端电阻、波特率和错误帧验证。",
+        content=(
+            "# Steps:\n"
+            "1. 检查总线两端 120 欧姆终端电阻是否存在\n"
+            "2. 确认节点波特率和采样点配置一致\n"
+            "###### 示例：\n"
+            "- candump can0\n"
+        ),
+        reason="排查流程可复用",
+    )
+
+    skill = to_skill_proposal(proposal)
+
+    assert skill.steps == [
+        "检查总线两端 120 欧姆终端电阻是否存在",
+        "确认节点波特率和采样点配置一致",
+    ]
+    assert skill.examples == ["candump can0"]

@@ -6,8 +6,9 @@ from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
 
 _SKILL_TYPES = {"new_skill", "update_skill"}
-_STEP_HEADINGS = {"步骤", "操作步骤", "流程", "排查步骤"}
+_STEP_HEADINGS = {"步骤", "操作步骤", "流程", "排查步骤", "steps"}
 _EXAMPLE_HEADINGS = {"示例", "examples", "example"}
+_HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s+(.+?)\s*$")
 _ITEM_RE = re.compile(r"^\s*(?:[-*]\s+|\d+[.)]\s*)(.+?)\s*$")
 
 @dataclass
@@ -53,6 +54,8 @@ def _extract_items(content: str, headings: set[str], *, fallback_to_all: bool) -
         return items
     if not fallback_to_all:
         return []
+    if _has_markdown_heading(content):
+        return []
     return _items_from_lines(content.splitlines())
 
 def _extract_section_lines(content: str, headings: set[str]) -> List[str]:
@@ -60,9 +63,8 @@ def _extract_section_lines(content: str, headings: set[str]) -> List[str]:
     in_section = False
     normalized_headings = {h.lower() for h in headings}
     for raw in content.splitlines():
-        stripped = raw.strip()
-        if stripped.startswith("## "):
-            heading = stripped.lstrip("#").strip().lower()
+        heading = _parse_heading(raw)
+        if heading is not None:
             if in_section:
                 break
             in_section = heading in normalized_headings
@@ -70,6 +72,15 @@ def _extract_section_lines(content: str, headings: set[str]) -> List[str]:
         if in_section:
             lines.append(raw)
     return lines
+
+def _has_markdown_heading(content: str) -> bool:
+    return any(_parse_heading(line) is not None for line in content.splitlines())
+
+def _parse_heading(line: str) -> Optional[str]:
+    match = _HEADING_RE.match(line)
+    if not match:
+        return None
+    return match.group(1).strip().rstrip("：:").strip().lower()
 
 def _items_from_lines(lines: List[str]) -> List[str]:
     items: List[str] = []

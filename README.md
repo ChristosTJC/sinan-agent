@@ -2,7 +2,7 @@
 
 司南 (Sinán) 是面向嵌入式开发者的智能体工作台，提供知识库检索、板卡资料管理、串口/USB 工具、固件构建、固件烧录和多轮调试记忆。
 
-当前状态：Alpha。已完成 no-hardware smoke、dry-run 端到端验证、硬件黄金路径模拟和 585 个单元/集成测试，覆盖率达 63%。真实板卡 HIL 闭环验证待社区贡献或后续硬件环境补齐——欢迎插上板卡跑 `sinan run` 反馈结果。定位：**ready for hardware validation**。
+当前状态：Alpha。已完成 no-hardware smoke、dry-run 端到端验证、硬件黄金路径命令（`sinan golden-path`，默认只读 dry-run）和 585 个单元/集成测试，覆盖率达 63%。真实板卡 HIL 闭环验证待社区贡献或后续硬件环境补齐——欢迎插上板卡跑 `sinan run` 反馈结果。定位：**ready for hardware validation**。
 
 ## 快速开始
 
@@ -116,6 +116,21 @@ sinan flash --project-path /path/to/firmware --port /dev/ttyACM0 --method auto
 ```
 
 `flash` 属于高危操作，默认会要求交互确认。自动化环境可显式加 `--force` 跳过确认。
+
+### 5. 硬件黄金路径（端到端流水线）
+
+一条命令串起检测→编译→烧写→串口验证。默认只读 dry-run（只检测板卡和构建工具，安全、可在无硬件/CI 预检）：
+
+```bash
+sinan golden-path --project-path /path/to/firmware
+```
+
+真实执行（编译/烧写）需显式开关；危险工具默认仍逐个交互确认，自动化场景再加 `--yes` 免确认：
+
+```bash
+sinan golden-path --project-path /path/to/firmware --execute          # 真跑，逐步确认
+sinan golden-path --project-path /path/to/firmware --execute --yes    # 真跑，免确认（明确接受风险）
+```
 
 ## 平台和依赖矩阵
 

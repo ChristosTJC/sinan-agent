@@ -8,7 +8,9 @@ from typing import List, Dict, Any, Optional
 _SKILL_TYPES = {"new_skill", "update_skill"}
 _STEP_HEADINGS = {"步骤", "操作步骤", "流程", "排查步骤", "steps"}
 _EXAMPLE_HEADINGS = {"示例", "examples", "example"}
+_PLAIN_LABEL_HEADINGS = _STEP_HEADINGS | _EXAMPLE_HEADINGS | {"触发条件", "前提"}
 _HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s+(.+?)\s*$")
+_PLAIN_LABEL_RE = re.compile(r"^\s*(.+?)\s*[：:]\s*$")
 _ITEM_RE = re.compile(r"^\s*(?:[-*]\s+|\d+[.)]\s*)(.+?)\s*$")
 
 @dataclass
@@ -54,7 +56,7 @@ def _extract_items(content: str, headings: set[str], *, fallback_to_all: bool) -
         return items
     if not fallback_to_all:
         return []
-    if _has_markdown_heading(content):
+    if _has_section_heading(content):
         return []
     return _items_from_lines(content.splitlines())
 
@@ -73,14 +75,25 @@ def _extract_section_lines(content: str, headings: set[str]) -> List[str]:
             lines.append(raw)
     return lines
 
-def _has_markdown_heading(content: str) -> bool:
+def _has_section_heading(content: str) -> bool:
     return any(_parse_heading(line) is not None for line in content.splitlines())
 
 def _parse_heading(line: str) -> Optional[str]:
     match = _HEADING_RE.match(line)
+    if match:
+        return _normalize_heading(match.group(1))
+
+    match = _PLAIN_LABEL_RE.match(line)
     if not match:
         return None
-    return match.group(1).strip().rstrip("：:").strip().lower()
+
+    heading = _normalize_heading(match.group(1))
+    if heading in _PLAIN_LABEL_HEADINGS:
+        return heading
+    return None
+
+def _normalize_heading(heading: str) -> str:
+    return heading.strip().rstrip("：:").strip().lower()
 
 def _items_from_lines(lines: List[str]) -> List[str]:
     items: List[str] = []

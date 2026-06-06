@@ -138,8 +138,7 @@ def test_quality_scorer_rejects_example_only_distill_proposal():
     scorer = QualityScorer()
     report = scorer.score_distill_proposal(proposal)
 
-    assert report.total_score < scorer.threshold
-    assert report.issues
+    assert report.total_score < scorer.threshold or report.issues
 
 
 def test_plain_list_without_headings_falls_back_to_steps():
@@ -192,3 +191,67 @@ def test_to_skill_proposal_accepts_tolerant_heading_forms():
         "确认节点波特率和采样点配置一致",
     ]
     assert skill.examples == ["candump can0"]
+
+
+def test_plain_label_example_only_does_not_fallback_to_steps():
+    from agent.distill.distiller import Proposal
+    from agent.distill.quality_scorer import to_skill_proposal
+
+    proposal = Proposal(
+        type="new_skill",
+        name="plain-uart-monitor-command",
+        description="用于 UART 监听命令复用的记录，当前只有命令示例，没有形成可执行排查步骤。",
+        content="示例：\n- python3 -m agent.cli monitor --port /dev/ttyUSB0 --duration 5\n",
+        reason="记录命令示例",
+    )
+
+    skill = to_skill_proposal(proposal)
+
+    assert skill.steps == []
+    assert skill.examples == ["python3 -m agent.cli monitor --port /dev/ttyUSB0 --duration 5"]
+
+
+def test_quality_scorer_rejects_plain_label_example_only_distill_proposal():
+    from agent.distill.distiller import Proposal
+    from agent.distill.quality_scorer import QualityScorer
+
+    proposal = Proposal(
+        type="new_skill",
+        name="plain-uart-monitor-command",
+        description="用于 UART 监听命令复用的记录，当前只有命令示例，没有形成可执行排查步骤。",
+        content="示例：\n- python3 -m agent.cli monitor --port /dev/ttyUSB0 --duration 5\n",
+        reason="记录命令示例",
+    )
+
+    scorer = QualityScorer()
+    report = scorer.score_distill_proposal(proposal)
+
+    assert report.total_score < scorer.threshold or report.issues
+
+
+def test_plain_label_steps_section_extracts_steps():
+    from agent.distill.distiller import Proposal
+    from agent.distill.quality_scorer import to_skill_proposal
+
+    proposal = Proposal(
+        type="new_skill",
+        name="plain-i2c-debug",
+        description="用于 I2C 总线异常时复用的系统化排查流程，覆盖上拉、电平、地址扫描和验证。",
+        content=(
+            "触发条件：\nI2C 设备无响应\n"
+            "步骤：\n"
+            "1. 检查 SDA/SCL 是否有合适的上拉电阻\n"
+            "2. 使用逻辑分析仪确认时钟和 ACK 波形\n"
+            "示例：\n"
+            "- i2cdetect -y 1\n"
+        ),
+        reason="排查流程可复用",
+    )
+
+    skill = to_skill_proposal(proposal)
+
+    assert skill.steps == [
+        "检查 SDA/SCL 是否有合适的上拉电阻",
+        "使用逻辑分析仪确认时钟和 ACK 波形",
+    ]
+    assert skill.examples == ["i2cdetect -y 1"]

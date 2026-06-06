@@ -626,6 +626,11 @@ class SinanREPL:
         from agent.distill.distiller import SkillDistiller
         from agent.distill.writer import SkillWriter
         from agent.distill.report import DistillReport
+        from agent.distill.quality_scorer import (
+            QualityReport,
+            QualityScorer,
+            is_skill_proposal,
+        )
 
         # 排除系统消息，构建转录
         transcript = [
@@ -650,8 +655,29 @@ class SinanREPL:
         if not proposals:
             return "\n  本次会话无可提炼内容\n"
 
+        scorer = QualityScorer()
+        quality_reports = {}
+        for idx, proposal in enumerate(proposals):
+            if is_skill_proposal(proposal):
+                try:
+                    quality_reports[idx] = scorer.score_distill_proposal(proposal)
+                except Exception as exc:
+                    logger.warning("提案质量评分失败: %s", exc)
+                    quality_reports[idx] = QualityReport(
+                        completeness_score=0.0,
+                        reusability_score=0.0,
+                        clarity_score=0.0,
+                        total_score=0.0,
+                        issues=["质量评分失败"],
+                        suggestions=["请手动检查提案内容"],
+                    )
+
         # 报告
-        report = DistillReport(proposals)
+        report = DistillReport(
+            proposals,
+            quality_reports=quality_reports,
+            quality_threshold=scorer.threshold,
+        )
         print_command_result(self.console, report.render())
 
         # 逐项确认
@@ -660,7 +686,7 @@ class SinanREPL:
             print(report.render_proposal(i, p))
             try:
                 answer = input(
-                    f"  应用? [y / N / a=应用全部 / q=停止] "
+                    f"  应用? [y / N / a=应用推荐项 / q=停止] "
                 ).strip().lower()
             except (EOFError, KeyboardInterrupt):
                 break
@@ -692,8 +718,16 @@ class SinanREPL:
                             content=p.content,
                         )
                         applied += 1
-                elif p.type == "skill_update":
-                    result = writer.update_skill(p.target, p.section, p.content)
+                elif p.type == "update_skill":
+                    project_skills_dir = (
+                        getattr(self._skill_loader, "skills_dir", None) if self._skill_loader else None
+                    )
+                    result = writer.update_skill(
+                        p.name,
+                        p.section or "补充",
+                        p.content,
+                        project_skills_dir=project_skills_dir,
+                    )
                     if result:
                         applied += 1
             except Exception as exc:
@@ -706,7 +740,7 @@ class SinanREPL:
             # 重建系统提示（让新技能即刻注入）
             self.messages[0]["content"] = self._build_system_prompt()
 
-        return report.summary()
+        return report.summary(applied=applied)
 
     def _handle_exit(self) -> bool:
         """处理退出前蒸馏提议。

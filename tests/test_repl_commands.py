@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+from types import SimpleNamespace
+
 from prompt_toolkit.document import Document
 
 from agent.llm.client import LLMResponse
@@ -87,6 +91,162 @@ class _FakeClient:
 
     def chat_stream(self, messages, tools=None):
         yield from ()
+
+
+class _DistillClient:
+    def __init__(self, proposals):
+        self.model = "fake-distill"
+        self.proposals = proposals
+
+    def chat(self, prompt):
+        return SimpleNamespace(content=json.dumps({"proposals": self.proposals}))
+
+
+class _DistillSkillLoader:
+    def __init__(self, skills_dir=None):
+        self.skills_dir = skills_dir or Path("skills")
+        self.reload_calls = []
+
+    def load_all(self, reload=False):
+        self.reload_calls.append(reload)
+        return []
+
+
+class _KnowledgeSink:
+    def __init__(self):
+        self.entries = []
+
+    def add_entry(self, category, name, content):
+        self.entries.append({"category": category, "name": name, "content": content})
+
+
+def _minimal_distill_repl(proposals, knowledge_base=None, skill_loader=None):
+    repl = object.__new__(SinanREPL)
+    repl.messages = [
+        {"role": "system", "content": "old prompt"},
+        {"role": "user", "content": "帮我排查 I2C"},
+        {"role": "assistant", "content": "先查上拉，再扫地址。"},
+    ]
+    repl.client = _DistillClient(proposals)
+    repl.console = None
+    repl._skill_loader = skill_loader if skill_loader is not None else _DistillSkillLoader()
+    repl._knowledge_base = knowledge_base
+    repl._distilled = False
+    repl._build_system_prompt = lambda: "new prompt"
+    return repl
+
+
+def test_run_distillation_apply_all_writes_high_quality_skill(monkeypatch, tmp_path):
+    monkeypatch.setenv("SINAN_HOME", str(tmp_path))
+    monkeypatch.setattr("builtins.input", lambda _prompt="": "a")
+
+    repl = _minimal_distill_repl([
+        {
+            "type": "new_skill",
+            "name": "i2c-debug-flow",
+            "description": "用于 I2C 总线异常时复用的系统化排查流程，覆盖上拉、电平、地址扫描和验证。",
+            "content": (
+                "## 步骤\n"
+                "1. 检查 SDA/SCL 是否有合适的上拉电阻\n"
+                "2. 使用逻辑分析仪确认时钟和 ACK 波形\n"
+                "3. 使用 i2cdetect 或等价工具扫描设备地址\n"
+                "## 示例\n"
+                "- i2cdetect -y 1\n"
+            ),
+            "reason": "排查流程可复用",
+        }
+    ])
+
+    summary = repl._run_distillation()
+
+    skill_file = tmp_path / "skills" / "i2c-debug-flow" / "SKILL.md"
+    assert skill_file.is_file()
+    assert "source: distilled" in skill_file.read_text()
+    assert "已应用 1" in summary
+    assert repl.messages[0]["content"] == "new prompt"
+    assert True in repl._skill_loader.reload_calls
+
+
+def test_run_distillation_apply_all_skips_low_quality_skill_but_writes_knowledge(monkeypatch, tmp_path):
+    monkeypatch.setenv("SINAN_HOME", str(tmp_path))
+    monkeypatch.setattr("builtins.input", lambda _prompt="": "a")
+    knowledge = _KnowledgeSink()
+
+    repl = _minimal_distill_repl([
+        {
+            "type": "new_skill",
+            "name": "bad-skill",
+            "description": "差",
+            "content": "",
+            "reason": "x",
+        },
+        {
+            "type": "new_knowledge",
+            "category": "tips",
+            "title": "MPU6050 地址",
+            "content": "AD0=0 时地址为 0x68",
+            "reason": "知识条目",
+        },
+    ], knowledge_base=knowledge)
+
+    summary = repl._run_distillation()
+
+    assert not (tmp_path / "skills" / "bad-skill").exists()
+    assert knowledge.entries == [
+        {"category": "tips", "name": "MPU6050 地址", "content": "AD0=0 时地址为 0x68"}
+    ]
+    assert "已应用 1" in summary
+    assert "跳过 1" in summary
+
+
+def test_run_distillation_manual_confirm_overrides_low_quality_skill(monkeypatch, tmp_path):
+    monkeypatch.setenv("SINAN_HOME", str(tmp_path))
+    monkeypatch.setattr("builtins.input", lambda _prompt="": "y")
+
+    repl = _minimal_distill_repl([
+        {
+            "type": "new_skill",
+            "name": "manual-low-quality",
+            "description": "差",
+            "content": "",
+            "reason": "x",
+        }
+    ])
+
+    summary = repl._run_distillation()
+
+    assert (tmp_path / "skills" / "manual-low-quality" / "SKILL.md").is_file()
+    assert "已应用 1" in summary
+
+
+def test_run_distillation_applies_update_skill_type(monkeypatch, tmp_path):
+    monkeypatch.setenv("SINAN_HOME", str(tmp_path))
+    monkeypatch.setattr("builtins.input", lambda _prompt="": "y")
+
+    existing = tmp_path / "skills" / "existing-skill"
+    existing.mkdir(parents=True)
+    (existing / "SKILL.md").write_text(
+        "---\nname: existing-skill\ndescription: 已有技能\n---\n\n## 步骤\n1. 原步骤\n",
+        encoding="utf-8",
+    )
+
+    repl = _minimal_distill_repl([
+        {
+            "type": "update_skill",
+            "name": "existing-skill",
+            "section": "注意事项",
+            "description": "给已有技能补充注意事项",
+            "content": "补充 I2C 上拉阻值和线长检查。",
+            "reason": "已有技能可增强",
+        }
+    ])
+
+    summary = repl._run_distillation()
+
+    content = (existing / "SKILL.md").read_text(encoding="utf-8")
+    assert "## 注意事项" in content
+    assert "补充 I2C 上拉阻值和线长检查。" in content
+    assert "已应用 1" in summary
 
 
 def test_switch_model_uses_configured_provider_for_catalog_model(monkeypatch):

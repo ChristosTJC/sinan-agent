@@ -2,7 +2,7 @@
 
 司南 (Sinán) 是面向嵌入式开发者的智能体工作台，提供知识库检索、板卡资料管理、串口/USB 工具、固件构建、固件烧录和多轮调试记忆。
 
-当前状态：Alpha。已完成 no-hardware smoke、dry-run 端到端验证、硬件黄金路径命令（`sinan golden-path`，默认只读 dry-run）和 595 个单元/集成测试，覆盖率达 64%。真实板卡 HIL 闭环验证待社区贡献或后续硬件环境补齐——欢迎插上板卡跑 `sinan run` 反馈结果。定位：**ready for hardware validation**。
+当前状态：Alpha。已完成 no-hardware smoke、dry-run 端到端验证、硬件黄金路径命令（`sinan golden-path`，默认只读 dry-run）和 574 个单元/集成测试，覆盖率达 64%。真实板卡 HIL 闭环验证待社区贡献或后续硬件环境补齐——欢迎插上板卡跑 `sinan run` 反馈结果。定位：**ready for hardware validation**。
 
 ## 快速开始
 

@@ -341,17 +341,35 @@ def cmd_golden_path(args: argparse.Namespace) -> int:
     registry = get_registry()
     gp = HardwareGoldenPath(registry)
 
-    result = gp.run_dry(args.project_path)
+    if not args.execute:
+        result = gp.run_dry(args.project_path)
+        if result.get("success"):
+            print("✓ 黄金路径预检通过（dry-run）")
+        else:
+            print(f"❌ 黄金路径预检未通过: {result.get('error', '未知错误')}")
+        print(
+            f"   板卡检测: {'是' if result.get('board_detected') else '否'}"
+            f"  型号: {result.get('board_type') or '-'}"
+            f"  端口: {result.get('ports') or []}"
+        )
+        print(f"   构建工具可用: {'是' if result.get('build_tools_available') else '否'}")
+        return 0 if result.get("success") else 1
+
+    # 真实执行：先配置安全门（--yes 才免确认），再 run()
+    registry.set_confirm_callback(None if args.yes else _cli_confirm)
+    registry.set_danger_confirm(not args.yes)
+    result = gp.run(args.project_path, baudrate=args.baudrate)
     if result.get("success"):
-        print("✓ 黄金路径预检通过（dry-run）")
+        print("✓ 黄金路径完整执行成功")
     else:
-        print(f"❌ 黄金路径预检未通过: {result.get('error', '未知错误')}")
+        print(f"❌ 黄金路径执行失败: {result.get('error', '未知错误')}")
+    for ph in result.get("phases", []):
+        mark = "✓" if ph.get("status") == "ok" else "❌"
+        print(f"   {mark} [{ph.get('phase')}] {ph.get('duration_ms')}ms")
     print(
-        f"   板卡检测: {'是' if result.get('board_detected') else '否'}"
-        f"  型号: {result.get('board_type') or '-'}"
-        f"  端口: {result.get('ports') or []}"
+        f"   引导检测: {'是' if result.get('boot_detected') else '否'}"
+        f"  总耗时: {result.get('total_duration_ms')}ms"
     )
-    print(f"   构建工具可用: {'是' if result.get('build_tools_available') else '否'}")
     return 0 if result.get("success") else 1
 
 

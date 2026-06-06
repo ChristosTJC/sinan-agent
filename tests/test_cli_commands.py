@@ -300,3 +300,45 @@ def test_golden_path_dry_returns_one_on_failure(monkeypatch):
     rc = cli.main(["golden-path"])
 
     assert rc == 1
+
+
+def test_golden_path_execute_configures_confirm_callback_not_bypassed(monkeypatch):
+    # 验收②：--execute（无 --yes）配置交互确认回调，不绕过危险工具确认
+    registry = FakeRegistry()
+    monkeypatch.setattr("agent.tools.get_registry", lambda: registry)
+
+    cli.main(["golden-path", "--execute"])
+
+    assert registry.confirm_callback is cli._cli_confirm
+    assert registry.danger_confirm is True
+
+
+def test_golden_path_execute_yes_disables_interactive_confirm(monkeypatch):
+    # 验收③：--execute --yes 关闭交互确认
+    registry = FakeRegistry()
+    monkeypatch.setattr("agent.tools.get_registry", lambda: registry)
+
+    cli.main(["golden-path", "--execute", "--yes"])
+
+    assert registry.confirm_callback is None
+    assert registry.danger_confirm is False
+
+
+def test_golden_path_execute_invokes_run_with_baudrate(monkeypatch):
+    # 证明 --execute 真走 run()（而非仍 run_dry），且透传 baudrate —— 防"只设安全门却仍 run_dry"
+    registry = FakeRegistry()
+    monkeypatch.setattr("agent.tools.get_registry", lambda: registry)
+    captured = {}
+
+    def fake_run(self, project_path, baudrate=115200):
+        captured["project_path"] = project_path
+        captured["baudrate"] = baudrate
+        return {"success": True, "phases": [], "boot_detected": False,
+                "total_duration_ms": 0.0, "error": None}
+
+    monkeypatch.setattr("agent.workflows.HardwareGoldenPath.run", fake_run)
+
+    rc = cli.main(["golden-path", "--execute", "--baudrate", "9600", "--project-path", "/tmp/fw"])
+
+    assert captured == {"project_path": "/tmp/fw", "baudrate": 9600}
+    assert rc == 0

@@ -263,6 +263,17 @@ def test_analyze_client_error_returns_empty():
 
 # ─── writer 测试 ──────────────────────────────────────────────
 
+def test_skill_writer_default_dir_uses_sinan_home(monkeypatch, tmp_path):
+    """SkillWriter 无参构造写入 SINAN_HOME/skills。"""
+    monkeypatch.setenv("SINAN_HOME", str(tmp_path))
+    from agent.distill.writer import SkillWriter
+
+    writer = SkillWriter()
+
+    assert writer.user_skills_dir == tmp_path / "skills"
+    assert writer.user_skills_dir.is_dir()
+
+
 def test_write_skill_roundtrip():
     """写技能文件 + round-trip 校验。"""
     from agent.distill.writer import SkillWriter

@@ -5,6 +5,8 @@ import logging
 from pathlib import Path
 from typing import Optional
 
+from agent.config import get_sinan_home
+
 logger = logging.getLogger(__name__)
 
 
@@ -18,8 +20,10 @@ class SkillWriter:
         user_skills_dir: 用户技能目录（写入目标）。
     """
 
-    def __init__(self, user_skills_dir: Path) -> None:
-        self.user_skills_dir = Path(user_skills_dir)
+    def __init__(self, user_skills_dir: Optional[Path] = None) -> None:
+        self.user_skills_dir = (
+            Path(user_skills_dir) if user_skills_dir is not None else get_sinan_home() / "skills"
+        )
         self.user_skills_dir.mkdir(parents=True, exist_ok=True)
 
     # ── 名字校验 ───────────────────────────────────────────────

@@ -80,12 +80,12 @@ class AgentOrchestrator:
         phases: dict[str, Any] = {}
 
         try:
-            phases["understand"] = self._phase_understand(user_input)
-            phases["retrieve"] = self._phase_retrieve(user_input)
-            phases["plan"] = self._phase_plan(user_input, phases["retrieve"])
-            phases["execute"] = self._phase_execute(phases["plan"])
-            phases["verify"] = self._phase_verify(phases["plan"], phases["execute"], user_input)
-            phases["consolidate"] = self._phase_consolidate(user_input, phases, task_id)
+            phases["understand"] = self.phase_understand(user_input)
+            phases["retrieve"] = self.phase_retrieve(user_input)
+            phases["plan"] = self.phase_plan(user_input, phases["retrieve"])
+            phases["execute"] = self.phase_execute(phases["plan"])
+            phases["verify"] = self.phase_verify(phases["plan"], phases["execute"], user_input)
+            phases["consolidate"] = self.phase_consolidate(user_input, phases, task_id)
 
             success = (phases["verify"].get("all_passed", True)
                        and phases["execute"].get("all_passed", True))
@@ -112,7 +112,7 @@ class AgentOrchestrator:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _phase_understand(user_input: str) -> dict:
+    def phase_understand(user_input: str) -> dict:
         """解析用户输入，推断 intent / target / urgency。"""
         lower = user_input.lower()
 
@@ -154,7 +154,7 @@ class AgentOrchestrator:
     # 阶段 2：知识检索
     # ------------------------------------------------------------------
 
-    def _phase_retrieve(self, user_input: str) -> dict:
+    def phase_retrieve(self, user_input: str) -> dict:
         """从 L3 知识库、L1 核心记忆、L2 会话历史检索上下文。"""
         result: dict[str, Any] = {"knowledge": "", "memory": "", "session_history": []}
 
@@ -183,7 +183,7 @@ class AgentOrchestrator:
     # 阶段 3：计划生成
     # ------------------------------------------------------------------
 
-    def _phase_plan(self, user_input: str, retrieval: dict) -> list[dict]:
+    def phase_plan(self, user_input: str, retrieval: dict) -> list[dict]:
         """生成执行计划。LLM 可用时由 LLM 规划，否则回退规则式分解。"""
         if self.llm_client is not None:
             try:
@@ -304,7 +304,7 @@ class AgentOrchestrator:
     # 阶段 4：工具执行
     # ------------------------------------------------------------------
 
-    def _phase_execute(self, plan: list[dict]) -> dict:
+    def phase_execute(self, plan: list[dict]) -> dict:
         """按计划逐步调用 registry 中的工具，收集结果。"""
         steps: list[dict] = []
         all_passed, failures = True, []
@@ -343,7 +343,7 @@ class AgentOrchestrator:
     # 阶段 5：验证
     # ------------------------------------------------------------------
 
-    def _phase_verify(self, plan: list[dict], execution: dict, user_input: str) -> dict:
+    def phase_verify(self, plan: list[dict], execution: dict, user_input: str) -> dict:
         """验证执行结果。LLM 可用时辅助语义评估。"""
         failures = list(execution.get("failures", []))
         all_passed = execution.get("all_passed", True)
@@ -377,7 +377,7 @@ class AgentOrchestrator:
     # 阶段 6：记忆沉淀
     # ------------------------------------------------------------------
 
-    def _phase_consolidate(self, user_input: str, phases: dict, task_id: str) -> dict:
+    def phase_consolidate(self, user_input: str, phases: dict, task_id: str) -> dict:
         """将执行结果写入核心记忆、会话消息并持久化到磁盘。"""
         written, details = False, []
         verify = phases.get("verify", {})

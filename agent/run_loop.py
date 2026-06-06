@@ -170,18 +170,18 @@ class SinanRunController:
 
         phases: dict[str, Any] = {}
 
-        phases["understand"] = self._run_phase("understand", lambda: orchestrator._phase_understand(goal))
-        phases["retrieve"] = self._run_phase("retrieve", lambda: orchestrator._phase_retrieve(goal))
-        phases["plan"] = self._run_phase("plan", lambda: orchestrator._phase_plan(goal, phases["retrieve"]))
+        phases["understand"] = self._run_phase("understand", lambda: orchestrator.phase_understand(goal))
+        phases["retrieve"] = self._run_phase("retrieve", lambda: orchestrator.phase_retrieve(goal))
+        phases["plan"] = self._run_phase("plan", lambda: orchestrator.phase_plan(goal, phases["retrieve"]))
         self.writer.write_plan(phases["plan"])
         phases["execute"] = self._run_phase("execute", lambda: self._execute_plan(phases["plan"]))
         phases["verify"] = self._run_phase(
             "verify",
-            lambda: orchestrator._phase_verify(phases["plan"], phases["execute"], goal),
+            lambda: orchestrator.phase_verify(phases["plan"], phases["execute"], goal),
         )
         phases["consolidate"] = self._run_phase(
             "consolidate",
-            lambda: orchestrator._phase_consolidate(goal, phases, self.run_id),
+            lambda: orchestrator.phase_consolidate(goal, phases, self.run_id),
         )
 
         success = phases["execute"].get("all_passed", True) and phases["verify"].get("all_passed", True)

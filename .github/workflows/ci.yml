@@ -21,8 +21,6 @@ jobs:
           cache: pip
           cache-dependency-path: |
             pyproject.toml
-            setup.cfg
-            requirements.txt
 
       - name: Install dependencies
         run: |
@@ -48,8 +46,6 @@ jobs:
           cache: pip
           cache-dependency-path: |
             pyproject.toml
-            setup.cfg
-            requirements.txt
 
       - name: Install dependencies
         run: |
@@ -90,8 +86,6 @@ jobs:
           cache: pip
           cache-dependency-path: |
             pyproject.toml
-            setup.cfg
-            requirements.txt
 
       - name: Install dependencies
         run: |
@@ -123,8 +117,6 @@ jobs:
           cache: pip
           cache-dependency-path: |
             pyproject.toml
-            setup.cfg
-            requirements.txt
 
       - name: Install dependencies
         run: |

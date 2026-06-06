@@ -27,7 +27,6 @@ credentials.json
 
 # 但保留示例文件
 !settings.json.example
-!settings.json.template
 
 # 本地数据
 .nexus-map/

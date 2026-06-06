@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
 
 
 class FakeRegistry:
@@ -188,7 +189,7 @@ def test_knowledge_and_board_endpoints_are_served_by_local_backends():
 
 
 def test_coze_openapi_matches_api_contract():
-    spec = json.loads(open("coze-plugin-openapi.json", encoding="utf-8").read())
+    spec = json.loads(Path("coze-plugin-openapi.json").read_text(encoding="utf-8"))
 
     flash_schema = spec["paths"]["/flash_firmware"]["post"]["requestBody"]["content"]["application/json"]["schema"]
     sensor_schema = spec["paths"]["/sensor_read"]["post"]["requestBody"]["content"]["application/json"]["schema"]

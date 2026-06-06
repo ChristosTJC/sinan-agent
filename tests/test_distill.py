@@ -19,6 +19,11 @@ def test_proposal_defaults():
     assert p.content == ""
     assert p.section == ""
 
+    positional = Proposal("new_knowledge", "测试", "", "", "正文", "tips", "标题")
+    assert positional.category == "tips"
+    assert positional.title == "标题"
+    assert positional.section == ""
+
 
 def test_build_transcript_filters_system():
     """_build_transcript 过滤 system 消息。"""
@@ -158,6 +163,34 @@ def test_validate_update_skill_reads_section_with_default():
     assert defaulted.section == "补充"
 
 
+def test_validate_non_update_proposals_ignore_section():
+    """非 update_skill 提案忽略章节名。"""
+    from agent.distill.distiller import SkillDistiller
+
+    d = SkillDistiller()
+
+    new_skill = d._validate_proposal({
+        "type": "new_skill",
+        "name": "i2c-debug",
+        "section": "注意事项",
+        "content": "I2C 调试方法",
+        "reason": "通用调试方法",
+    })
+    assert new_skill is not None
+    assert new_skill.section == ""
+
+    new_knowledge = d._validate_proposal({
+        "type": "new_knowledge",
+        "category": "tips",
+        "title": "I2C 上拉",
+        "section": "注意事项",
+        "content": "上拉阻值需按总线电容估算",
+        "reason": "可复用知识",
+    })
+    assert new_knowledge is not None
+    assert new_knowledge.section == ""
+
+
 def test_max_proposals_cap():
     """提案数封顶 — 在 analyze() 层面做截断。"""
     from agent.distill.distiller import SkillDistiller
@@ -208,6 +241,9 @@ def test_analyze_with_mock_client():
     assert len(proposals) == 1
     assert proposals[0].name == "test-skill"
     mock_client.chat.assert_called_once()
+    prompt = mock_client.chat.call_args.args[0]
+    assert "update_skill" in prompt
+    assert "section" in prompt
 
 
 def test_analyze_client_error_returns_empty():

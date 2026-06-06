@@ -23,9 +23,9 @@ class Proposal:
         name: 技能名（new_skill/update_skill 时使用，小写连字符）。
         description: 简短描述。
         content: 正文内容（Markdown）。
-        section: 更新技能时追加的章节名（update_skill 时使用）。
         category: 知识分类（new_knowledge 时使用，如 tips/pitfalls/error_codes）。
         title: 知识标题（new_knowledge 时使用）。
+        section: 更新技能时追加的章节名（update_skill 时使用）。
     """
 
     type: str
@@ -33,9 +33,9 @@ class Proposal:
     name: str = ""
     description: str = ""
     content: str = ""
-    section: str = ""
     category: str = ""
     title: str = ""
+    section: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -227,6 +227,7 @@ class SkillDistiller:
       "name": "技能名（小写连字符，如 i2c-debug）",
       "description": "简短描述",
       "content": "技能/知识正文（Markdown 格式）",
+      "section": "章节名（update_skill 使用，如 注意事项/步骤/验证）",
       "reason": "为何值得保存",
       ...  // new_knowledge 额外需要 category/title
     }}

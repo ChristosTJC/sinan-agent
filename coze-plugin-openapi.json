@@ -1,0 +1,558 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "司南 Sinán — 嵌入式智能体",
+    "description": "面向嵌入式开发者的 AI 硬件搭档。提供串口扫描、固件编译/烧录、传感器读取、知识库检索、板卡管理、设备桥接等能力，通过扣子平台实现自然语言驱动的硬件交互。",
+    "version": "0.1.0",
+    "contact": {
+      "name": "Sinán Team"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://your-sinan-api.example.com"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key"
+      }
+    }
+  },
+  "security": [
+    {
+      "ApiKeyAuth": []
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "healthCheck",
+        "summary": "健康检查",
+        "description": "确认 API 服务和核心工具链可用性，返回可用工具列表。",
+        "tags": ["系统"],
+        "responses": {
+          "200": {
+            "description": "服务健康状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "example": "ok" },
+                    "version": { "type": "string", "example": "0.1.0" },
+                    "tools_available": {
+                      "type": "array",
+                      "items": { "type": "string" },
+                      "example": ["scan_serial", "knowledge_search"]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/scan_serial": {
+      "post": {
+        "operationId": "scanSerial",
+        "summary": "扫描串口和USB设备",
+        "description": "扫描本机串口端口和 USB 设备，自动识别已连接的开发板。适合用户说\"扫描串口\"、\"看看有哪些设备\"时调用。",
+        "tags": ["串口与USB"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "include_usb": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "是否同时扫描 USB 设备"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "扫描结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "result": {
+                      "type": "array",
+                      "items": { "type": "object" }
+                    },
+                    "usb_devices": {
+                      "type": "array",
+                      "items": { "type": "object" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/serial_monitor": {
+      "post": {
+        "operationId": "serialMonitor",
+        "summary": "监听串口输出",
+        "description": "打开指定串口并监听一段时间的输出数据。有时间(30s)和字节(100KB)上限。适合用户说\"看看串口输出\"、\"监听日志\"时调用。",
+        "tags": ["串口与USB"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["port"],
+                "properties": {
+                  "port": {
+                    "type": "string",
+                    "description": "串口端口路径",
+                    "example": "/dev/ttyUSB0"
+                  },
+                  "baudrate": {
+                    "type": "integer",
+                    "default": 115200,
+                    "description": "波特率"
+                  },
+                  "duration_sec": {
+                    "type": "number",
+                    "default": 5.0,
+                    "description": "监听时长（秒）",
+                    "maximum": 30
+                  },
+                  "max_bytes": {
+                    "type": "integer",
+                    "default": 10240,
+                    "description": "最大字节数",
+                    "maximum": 102400
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "监听结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "port": { "type": "string" },
+                    "lines": {
+                      "type": "array",
+                      "items": { "type": "string" }
+                    },
+                    "line_count": { "type": "integer" },
+                    "data": { "type": "string" },
+                    "error": { "type": "string", "nullable": true }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sensor_read": {
+      "post": {
+        "operationId": "sensorRead",
+        "summary": "读取传感器数据",
+        "description": "从串口读取传感器样本并生成统计摘要。适合用户说\"读取温度\"、\"采集传感器数据\"时调用。",
+        "tags": ["传感器"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["port"],
+                "properties": {
+                  "port": {
+                    "type": "string",
+                    "description": "串口端口路径"
+                  },
+                  "baudrate": {
+                    "type": "integer",
+                    "default": 115200
+                  },
+                  "count": {
+                    "type": "integer",
+                    "default": 10,
+                    "minimum": 1,
+                    "maximum": 100,
+                    "description": "采集样本数"
+                  },
+                  "interval_sec": {
+                    "type": "number",
+                    "default": 0.1,
+                    "minimum": 0,
+                    "maximum": 30,
+                    "description": "采样间隔秒数"
+                  },
+                  "export_csv": {
+                    "type": "string",
+                    "nullable": true,
+                    "description": "可选 CSV 导出路径"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "传感器数据",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "port": { "type": "string" },
+                    "sample_count": { "type": "integer" },
+                    "samples": {
+                      "type": "array",
+                      "items": { "type": "object" }
+                    },
+                    "summary": { "type": "object", "nullable": true },
+                    "error": { "type": "string", "nullable": true }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/build_firmware": {
+      "post": {
+        "operationId": "buildFirmware",
+        "summary": "编译固件",
+        "description": "自动检测构建系统(PlatformIO/CMake/Make/Arduino)并编译固件。需要确认后执行。适合用户说\"编译固件\"、\"build\"时调用。",
+        "tags": ["固件"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["project_path"],
+                "properties": {
+                  "project_path": {
+                    "type": "string",
+                    "description": "固件项目根目录路径"
+                  },
+                  "target": {
+                    "type": "string",
+                    "nullable": true,
+                    "description": "CMake/Make 构建目标"
+                  },
+                  "env": {
+                    "type": "string",
+                    "nullable": true,
+                    "description": "PlatformIO 环境名"
+                  },
+                  "platform": {
+                    "type": "string",
+                    "nullable": true,
+                    "enum": ["esp32", "stm32", "nordic"],
+                    "description": "目标平台"
+                  },
+                  "chip": {
+                    "type": "string",
+                    "nullable": true,
+                    "description": "目标芯片型号，如 ESP32-S3"
+                  },
+                  "force": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "是否强制重新构建"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "编译结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "build_system": { "type": "string", "nullable": true },
+                    "output": { "type": "string" },
+                    "errors": { "type": "array", "items": { "type": "string" } },
+                    "warnings": { "type": "array", "items": { "type": "string" } },
+                    "firmware_path": { "type": "string", "nullable": true }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/flash_firmware": {
+      "post": {
+        "operationId": "flashFirmware",
+        "summary": "烧录固件",
+        "description": "将固件烧录到目标芯片。高危操作，需用户确认。适合用户说\"烧录\"、\"flash\"时调用。",
+        "tags": ["固件"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["project_path", "port"],
+                "properties": {
+                  "project_path": {
+                    "type": "string",
+                    "description": "固件项目根目录路径"
+                  },
+                  "port": {
+                    "type": "string",
+                    "description": "目标串口或调试端口",
+                    "example": "/dev/ttyUSB0"
+                  },
+                  "method": {
+                    "type": "string",
+                    "default": "auto",
+                    "enum": ["auto", "platformio", "esptool", "stm32cubeprog", "openocd", "jlink", "arduino", "nrfjprog", "west", "west-flash", "esp-idf", "idf"],
+                    "description": "烧录方式"
+                  },
+                  "platform": {
+                    "type": "string",
+                    "nullable": true,
+                    "enum": ["esp32", "stm32", "nordic"],
+                    "description": "目标平台"
+                  },
+                  "chip": {
+                    "type": "string",
+                    "nullable": true,
+                    "description": "目标芯片型号，如 ESP32-S3"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "烧录结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "output": { "type": "string" },
+                    "errors": { "type": "array", "items": { "type": "string" } },
+                    "error": { "type": "string", "nullable": true }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/knowledge_search": {
+      "post": {
+        "operationId": "knowledgeSearch",
+        "summary": "检索知识库",
+        "description": "检索司南内置知识库，包含MCU数据手册、通信协议规格、传感器参数、错误码释义。适合用户问\"ESP32-C3 支持什么外设\"、\"I2C 协议时序\"等问题时调用。",
+        "tags": ["知识库"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["query"],
+                "properties": {
+                  "query": {
+                    "type": "string",
+                    "description": "检索关键词或问题",
+                    "example": "ESP32-S3 外设列表"
+                  },
+                  "doc_type": {
+                    "type": "string",
+                    "nullable": true,
+                    "enum": ["mcu", "protocol", "sensor", "error_code"],
+                    "description": "文档类型过滤"
+                  },
+                  "limit": {
+                    "type": "integer",
+                    "default": 5,
+                    "minimum": 1,
+                    "maximum": 20
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "检索结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "results": {
+                      "type": "array",
+                      "items": { "type": "object" }
+                    },
+                    "total": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/board_list": {
+      "get": {
+        "operationId": "boardList",
+        "summary": "列出板卡",
+        "description": "列出所有已注册的开发板配置。适合用户说\"有哪些板卡\"、\"查看板卡列表\"时调用。",
+        "tags": ["板卡"],
+        "responses": {
+          "200": {
+            "description": "板卡列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "boards": {
+                      "type": "array",
+                      "items": { "type": "string" },
+                      "example": ["example_stm32f407", "example_esp32s3"]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/board_profile/{board_id}": {
+      "get": {
+        "operationId": "boardProfile",
+        "summary": "查看板卡详情",
+        "description": "获取指定板卡的详细配置信息，包括芯片型号、外设、引脚映射等。适合用户说\"看看 STM32F407 的配置\"时调用。",
+        "tags": ["板卡"],
+        "parameters": [
+          {
+            "name": "board_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "板卡 ID",
+            "example": "example_stm32f407"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "板卡详情",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "board_id": { "type": "string" },
+                    "profile": { "type": "object" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/device_bridge": {
+      "post": {
+        "operationId": "deviceBridge",
+        "summary": "设备桥接通信",
+        "description": "通过 JSONL-RPC 协议与远程嵌入式设备通信，下发指令或查询状态。适合用户说\"读取设备状态\"、\"向设备发送命令\"时调用。",
+        "tags": ["设备桥接"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["host", "method"],
+                "properties": {
+                  "host": {
+                    "type": "string",
+                    "example": "192.168.1.50",
+                    "description": "设备 IP 地址"
+                  },
+                  "port": {
+                    "type": "integer",
+                    "default": 5555,
+                    "description": "设备端口"
+                  },
+                  "method": {
+                    "type": "string",
+                    "description": "RPC 方法名",
+                    "example": "get_status"
+                  },
+                  "params": {
+                    "type": "object",
+                    "default": {},
+                    "description": "RPC 参数"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "桥接响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "result": { "type": "object", "nullable": true },
+                    "error": { "type": "string", "nullable": true }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

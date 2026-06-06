@@ -23,6 +23,7 @@ class Proposal:
         name: 技能名（new_skill/update_skill 时使用，小写连字符）。
         description: 简短描述。
         content: 正文内容（Markdown）。
+        section: 更新技能时追加的章节名（update_skill 时使用）。
         category: 知识分类（new_knowledge 时使用，如 tips/pitfalls/error_codes）。
         title: 知识标题（new_knowledge 时使用）。
     """
@@ -32,6 +33,7 @@ class Proposal:
     name: str = ""
     description: str = ""
     content: str = ""
+    section: str = ""
     category: str = ""
     title: str = ""
 
@@ -175,6 +177,9 @@ class SkillDistiller:
         # new_skill / update_skill 类型
         description = str(data.get("description", ""))
         content = str(data.get("content", ""))
+        section = ""
+        if ptype == "update_skill":
+            section = str(data.get("section") or "补充")
 
         return Proposal(
             type=ptype,
@@ -182,6 +187,7 @@ class SkillDistiller:
             name=name,
             description=description,
             content=content,
+            section=section,
         )
 
     # ── 主入口 ────────────────────────────────────────────────

@@ -17,6 +17,7 @@ def test_proposal_defaults():
     assert p.name == ""
     assert p.description == ""
     assert p.content == ""
+    assert p.section == ""
 
 
 def test_build_transcript_filters_system():
@@ -126,6 +127,35 @@ def test_validate_proposal_name_rejects_invalid():
     # 带数字
     p = d._validate_proposal({"type": "new_skill", "name": "i2c-scl-recovery-2", "reason": "ok"})
     assert p is not None
+
+
+def test_validate_update_skill_reads_section_with_default():
+    """update_skill 提案携带章节名，缺省使用补充。"""
+    from agent.distill.distiller import SkillDistiller
+
+    d = SkillDistiller()
+
+    explicit = d._validate_proposal({
+        "type": "update_skill",
+        "name": "i2c-debug",
+        "section": "注意事项",
+        "content": "补充 I2C 上拉阻值排查方法",
+        "reason": "已有技能可增强",
+    })
+    assert explicit is not None
+    assert explicit.type == "update_skill"
+    assert explicit.name == "i2c-debug"
+    assert explicit.section == "注意事项"
+    assert explicit.content == "补充 I2C 上拉阻值排查方法"
+
+    defaulted = d._validate_proposal({
+        "type": "update_skill",
+        "name": "i2c-debug",
+        "content": "补充内容",
+        "reason": "已有技能可增强",
+    })
+    assert defaulted is not None
+    assert defaulted.section == "补充"
 
 
 def test_max_proposals_cap():

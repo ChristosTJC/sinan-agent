@@ -1,7 +1,14 @@
 # agent/distill/quality_scorer.py
 from __future__ import annotations
+
+import re
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
+
+_SKILL_TYPES = {"new_skill", "update_skill"}
+_STEP_HEADINGS = {"步骤", "操作步骤", "流程", "排查步骤"}
+_EXAMPLE_HEADINGS = {"示例", "examples", "example"}
+_ITEM_RE = re.compile(r"^\s*(?:[-*]\s+|\d+[.)]\s*)(.+?)\s*$")
 
 @dataclass
 class SkillProposal:
@@ -20,6 +27,59 @@ class QualityReport:
     total_score: float
     issues: List[str] = field(default_factory=list)
     suggestions: List[str] = field(default_factory=list)
+
+def is_skill_proposal(proposal: Any) -> bool:
+    return getattr(proposal, "type", "") in _SKILL_TYPES
+
+def to_skill_proposal(proposal: Any) -> SkillProposal:
+    if not is_skill_proposal(proposal):
+        raise ValueError(f"非技能提案不能评分: {getattr(proposal, 'type', '')}")
+
+    content = str(getattr(proposal, "content", "") or "")
+    description = str(getattr(proposal, "description", "") or getattr(proposal, "reason", "") or "")
+
+    return SkillProposal(
+        name=str(getattr(proposal, "name", "") or ""),
+        description=description,
+        steps=_extract_items(content, _STEP_HEADINGS, fallback_to_all=True),
+        examples=_extract_items(content, _EXAMPLE_HEADINGS, fallback_to_all=False),
+        metadata={"type": str(getattr(proposal, "type", ""))},
+    )
+
+def _extract_items(content: str, headings: set[str], *, fallback_to_all: bool) -> List[str]:
+    section_lines = _extract_section_lines(content, headings)
+    items = _items_from_lines(section_lines)
+    if items:
+        return items
+    if not fallback_to_all:
+        return []
+    return _items_from_lines(content.splitlines())
+
+def _extract_section_lines(content: str, headings: set[str]) -> List[str]:
+    lines: List[str] = []
+    in_section = False
+    normalized_headings = {h.lower() for h in headings}
+    for raw in content.splitlines():
+        stripped = raw.strip()
+        if stripped.startswith("## "):
+            heading = stripped.lstrip("#").strip().lower()
+            if in_section:
+                break
+            in_section = heading in normalized_headings
+            continue
+        if in_section:
+            lines.append(raw)
+    return lines
+
+def _items_from_lines(lines: List[str]) -> List[str]:
+    items: List[str] = []
+    for line in lines:
+        match = _ITEM_RE.match(line)
+        if match:
+            item = match.group(1).strip()
+            if item:
+                items.append(item)
+    return items
 
 class QualityScorer:
     def __init__(self, threshold: float = 0.6):
@@ -59,6 +119,9 @@ class QualityScorer:
     def should_accept(self, proposal: SkillProposal) -> bool:
         report = self.score(proposal)
         return report.total_score >= self.threshold
+
+    def score_distill_proposal(self, proposal: Any) -> QualityReport:
+        return self.score(to_skill_proposal(proposal))
 
     def _score_completeness(self, proposal: SkillProposal) -> float:
         score = 0.0

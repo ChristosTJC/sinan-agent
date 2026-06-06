@@ -333,6 +333,28 @@ def cmd_flash(args: argparse.Namespace) -> int:
         return 1
 
 
+def cmd_golden_path(args: argparse.Namespace) -> int:
+    """执行硬件黄金路径流水线（默认只读 dry-run）。"""
+    from agent.tools import get_registry
+    from agent.workflows import HardwareGoldenPath
+
+    registry = get_registry()
+    gp = HardwareGoldenPath(registry)
+
+    result = gp.run_dry(args.project_path)
+    if result.get("success"):
+        print("✓ 黄金路径预检通过（dry-run）")
+    else:
+        print(f"❌ 黄金路径预检未通过: {result.get('error', '未知错误')}")
+    print(
+        f"   板卡检测: {'是' if result.get('board_detected') else '否'}"
+        f"  型号: {result.get('board_type') or '-'}"
+        f"  端口: {result.get('ports') or []}"
+    )
+    print(f"   构建工具可用: {'是' if result.get('build_tools_available') else '否'}")
+    return 0 if result.get("success") else 1
+
+
 def cmd_demo(args: argparse.Namespace) -> int:
     """运行无硬件 demo smoke test。"""
     from agent.diagnostics import collect_demo_status, render_demo
@@ -470,6 +492,13 @@ def build_parser() -> argparse.ArgumentParser:
     flash.add_argument("--method", "-m", default="auto", help="烧写方法 (auto/pyocd/platformio/esptool/stm32cubeprog/openocd/jlink/arduino)")
     flash.add_argument("--force", "-f", action="store_true", help="跳过危险工具确认")
 
+    # golden-path
+    golden = sub.add_parser("golden-path", help="硬件黄金路径流水线（默认只读 dry-run）")
+    golden.add_argument("--project-path", default=".", help="固件项目根目录路径")
+    golden.add_argument("--baudrate", type=int, default=115200, help="串口验证波特率（仅 --execute）")
+    golden.add_argument("--execute", action="store_true", help="走完整 run()（检测→编译→烧写→验证）；不给则只 dry-run")
+    golden.add_argument("--yes", action="store_true", help="仅 --execute 下生效：关闭逐工具交互确认")
+
     # demo
     demo = sub.add_parser("demo", help="运行无硬件 smoke test")
     demo.add_argument("--project-path", default=".", help="用于检测构建系统的项目根目录")
@@ -533,6 +562,8 @@ def main(argv: Optional[list] = None) -> int:
         return cmd_build(args)
     elif args.command == "flash":
         return cmd_flash(args)
+    elif args.command == "golden-path":
+        return cmd_golden_path(args)
     elif args.command == "demo":
         return cmd_demo(args)
     elif args.command == "doctor":

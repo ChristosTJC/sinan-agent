@@ -232,3 +232,71 @@ def test_diagnose_log_command_accepts_inline_log(capsys):
     assert rc == 0
     assert '"platform": "stm32"' in out
     assert "HardFault" in out
+
+
+def test_golden_path_registered_with_defaults():
+    parser = cli.build_parser()
+    args = parser.parse_args(["golden-path"])
+    assert args.command == "golden-path"
+    assert args.project_path == "."
+    assert args.baudrate == 115200
+    assert args.execute is False
+    assert args.yes is False
+
+
+def test_golden_path_default_is_dry_run_and_never_calls_build_or_flash(monkeypatch):
+    registry = FakeRegistry()
+    monkeypatch.setattr("agent.tools.get_registry", lambda: registry)
+
+    rc = cli.main(["golden-path"])
+
+    called = [name for name, _ in registry.calls]
+    assert "build_firmware" not in called
+    assert "flash_firmware" not in called
+    assert rc in (0, 1)  # 无硬件机器上 dry 预检通常 fail→1，不视为错误
+
+
+def test_golden_path_yes_without_execute_stays_dry_and_keeps_safety_gate(monkeypatch):
+    registry = FakeRegistry()
+    monkeypatch.setattr("agent.tools.get_registry", lambda: registry)
+
+    cli.main(["golden-path", "--yes"])
+
+    # 未配置危险确认（保持初始 None），且未触发 build/flash —— 钉死 "--yes 无 --execute 无意义"
+    assert registry.danger_confirm is None
+    assert registry.confirm_callback is None
+    called = [name for name, _ in registry.calls]
+    assert "build_firmware" not in called
+    assert "flash_firmware" not in called
+
+
+def test_golden_path_dry_returns_zero_on_success(monkeypatch):
+    registry = FakeRegistry()
+    monkeypatch.setattr("agent.tools.get_registry", lambda: registry)
+    monkeypatch.setattr(
+        "agent.workflows.HardwareGoldenPath.run_dry",
+        lambda self, project_path: {
+            "success": True, "board_detected": True, "board_type": "nRF52840",
+            "ports": ["/dev/ttyUSB0"], "build_tools_available": True, "error": None,
+        },
+    )
+
+    rc = cli.main(["golden-path"])
+
+    assert rc == 0
+
+
+def test_golden_path_dry_returns_one_on_failure(monkeypatch):
+    registry = FakeRegistry()
+    monkeypatch.setattr("agent.tools.get_registry", lambda: registry)
+    monkeypatch.setattr(
+        "agent.workflows.HardwareGoldenPath.run_dry",
+        lambda self, project_path: {
+            "success": False, "board_detected": False, "ports": [],
+            "build_tools_available": False, "error": "未检测到任何串口设备",
+        },
+    )
+
+    rc = cli.main(["golden-path"])
+
+    assert rc == 1

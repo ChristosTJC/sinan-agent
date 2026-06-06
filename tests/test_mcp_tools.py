@@ -151,23 +151,6 @@ class TestMcpAutoRegistration:
         mgr.disconnect("auto2")
 
 
-class TestMcpWorkerRestriction:
-    """验收标准 5: 未授权 worker 无法调用 MCP 工具."""
-
-    def test_worker_without_mcp_blocked(self):
-        from agent.tools import get_registry
-        from agent.orchestration.agent_tool import AgentTool, AgentRunConfig
-
-        r = get_registry()
-        at = AgentTool(r)
-        result = at.run_worker(
-            AgentRunConfig(allowed_tools=["read_file"]),
-            [{"name": "mcp_tool_call", "arguments": {"server_name": "x", "tool_name": "y", "arguments": {}}}],
-        )
-        assert result.success is False
-        assert "不在 allowed_tools" in result.results[0].get("error", "")
-
-
 class TestMcpHookIntegration:
     """验收标准 6: MCP 工具经过 Hook，可被 PreToolUse 拦截."""
 

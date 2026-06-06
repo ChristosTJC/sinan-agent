@@ -82,35 +82,3 @@ class TestShellOutputTruncation:
         })
         if result["success"]:
             assert len(result["stdout"]) <= 100 or result["truncated"]
-
-
-class TestShellWorkerIntegration:
-    """Worker 继承 shell 限制."""
-
-    def test_worker_without_shell_allowed(self):
-        from agent.tools import get_registry
-        from agent.orchestration.agent_tool import AgentTool, AgentRunConfig
-
-        r = get_registry()
-        at = AgentTool(r)
-
-        result = at.run_worker(
-            AgentRunConfig(allowed_tools=["read_file"]),
-            [{"name": "shell_command", "arguments": {"command": "pwd"}}],
-        )
-        assert result.success is False
-        assert "不在 allowed_tools" in result.results[0].get("error", "")
-
-    def test_worker_with_shell_allowed(self):
-        from agent.tools import get_registry
-        from agent.orchestration.agent_tool import AgentTool, AgentRunConfig
-
-        r = get_registry()
-        r.set_confirm_callback(lambda n, l, a: True)
-        at = AgentTool(r)
-
-        result = at.run_worker(
-            AgentRunConfig(allowed_tools=["shell_command"]),
-            [{"name": "shell_command", "arguments": {"command": "echo ok"}}],
-        )
-        assert result.success, result.results

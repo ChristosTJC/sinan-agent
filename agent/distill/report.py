@@ -1,9 +1,10 @@
 # agent/distill/report.py — 蒸馏报告：展示提案并支持逐项确认/跳过
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Dict, Iterable, List, Optional
 
 from .distiller import Proposal
+from .quality_scorer import QualityReport
 
 # 提案类型 → 中文标签映射
 _TYPE_LABELS: Dict[str, str] = {
@@ -32,8 +33,15 @@ class DistillReport:
         skipped: 已跳过的提案列表（按跳过顺序）。
     """
 
-    def __init__(self, proposals: List[Proposal]) -> None:
+    def __init__(
+        self,
+        proposals: List[Proposal],
+        quality_reports: Optional[Dict[int, QualityReport]] = None,
+        quality_threshold: float = 0.6,
+    ) -> None:
         self.proposals = list(proposals)
+        self.quality_reports = quality_reports or {}
+        self.quality_threshold = quality_threshold
         self._confirmed: List[Proposal] = []
         self._skipped: List[Proposal] = []
         self._decision: Dict[int, str] = {}  # index → "confirmed" | "skipped"
@@ -45,6 +53,10 @@ class DistillReport:
     @property
     def skipped(self) -> List[Proposal]:
         return list(self._skipped)
+
+    def iter_proposals(self) -> Iterable[tuple[int, Proposal]]:
+        """按索引顺序迭代提案，供 REPL 逐项确认使用。"""
+        return enumerate(self.proposals)
 
     # ── 决策方法 ──────────────────────────────────────────────
 
@@ -69,12 +81,16 @@ class DistillReport:
                 self._confirmed.remove(p)
 
     def confirm_all(self) -> None:
-        """确认所有提案。"""
+        """确认所有推荐提案；低质量提案默认跳过。"""
         self._skipped.clear()
         self._confirmed.clear()
         for i, p in enumerate(self.proposals):
-            self._decision[i] = "confirmed"
-            self._confirmed.append(p)
+            if self._is_low_quality(i):
+                self._decision[i] = "skipped"
+                self._skipped.append(p)
+            else:
+                self._decision[i] = "confirmed"
+                self._confirmed.append(p)
 
     def skip_all(self) -> None:
         """跳过所有提案。"""
@@ -83,6 +99,10 @@ class DistillReport:
         for i, p in enumerate(self.proposals):
             self._decision[i] = "skipped"
             self._skipped.append(p)
+
+    def _is_low_quality(self, idx: int) -> bool:
+        quality = self.quality_reports.get(idx)
+        return quality is not None and quality.total_score < self.quality_threshold
 
     # ── 渲染方法 ──────────────────────────────────────────────
 
@@ -113,11 +133,10 @@ class DistillReport:
             lines.append("-" * 40)
 
         lines.append("")
-        lines.append(f"共 {len(self.proposals)} 条提案。输入 'y' 逐项确认，'a' 全部确认，'n' 跳过。")
+        lines.append(f"共 {len(self.proposals)} 条提案。输入 'y' 逐项确认，'a' 应用所有推荐项，'n' 跳过。")
         return "\n".join(lines)
 
-    @staticmethod
-    def render_proposal(idx: int, proposal: Proposal) -> str:
+    def render_proposal(self, idx: int, proposal: Proposal) -> str:
         """渲染单条提案的预览文本。
 
         Args:
@@ -144,4 +163,27 @@ class DistillReport:
             if len(proposal.content) > 200:
                 preview += "..."
             parts.append(f"  内容: {preview}")
+        quality = self.quality_reports.get(idx)
+        if quality is not None:
+            status = "建议应用" if quality.total_score >= self.quality_threshold else "不建议应用"
+            parts.append(f"  质量: {quality.total_score:.2f}/1.00 ({status})")
+            if quality.issues:
+                parts.append(f"  问题: {'；'.join(quality.issues)}")
+            if quality.suggestions:
+                parts.append(f"  建议: {'；'.join(quality.suggestions)}")
         return "\n".join(parts)
+
+    def summary(self, applied: Optional[int] = None) -> str:
+        """渲染确认流程摘要。"""
+        applied_count = len(self._confirmed) if applied is None else applied
+        text = (
+            f"\n  蒸馏完成：已应用 {applied_count} 条，"
+            f"跳过 {len(self._skipped)} 条，共 {len(self.proposals)} 条\n"
+        )
+        low_quality_skipped = sum(
+            1 for idx, proposal in enumerate(self.proposals)
+            if self._decision.get(idx) == "skipped" and self._is_low_quality(idx)
+        )
+        if low_quality_skipped:
+            text += f"  其中 {low_quality_skipped} 条低质量技能提案未自动应用，可逐项 y 手动覆盖。\n"
+        return text

@@ -425,6 +425,102 @@ def test_report_confirm_all():
     assert len(r.skipped) == 0
 
 
+def test_report_renders_low_quality_warning():
+    """报告展示低质量提案的评分、问题和建议。"""
+    from agent.distill.distiller import Proposal
+    from agent.distill.quality_scorer import QualityReport
+    from agent.distill.report import DistillReport
+
+    proposal = Proposal(type="new_skill", name="bad", reason="x", description="差")
+    report = DistillReport(
+        [proposal],
+        quality_reports={
+            0: QualityReport(
+                completeness_score=0.2,
+                reusability_score=0.5,
+                clarity_score=0.0,
+                total_score=0.23,
+                issues=["缺少必需字段"],
+                suggestions=["补充描述、步骤或示例"],
+            )
+        },
+        quality_threshold=0.6,
+    )
+
+    rendered = report.render()
+
+    assert "质量: 0.23/1.00" in rendered
+    assert "不建议应用" in rendered
+    assert "缺少必需字段" in rendered
+    assert "补充描述、步骤或示例" in rendered
+
+
+def test_report_confirm_all_skips_low_quality_skill_but_keeps_knowledge():
+    """应用全部时跳过低质量技能，但保留知识提案。"""
+    from agent.distill.distiller import Proposal
+    from agent.distill.quality_scorer import QualityReport
+    from agent.distill.report import DistillReport
+
+    low_skill = Proposal(type="new_skill", name="bad", reason="x", description="差")
+    knowledge = Proposal(
+        type="new_knowledge",
+        category="tips",
+        title="MPU6050 地址",
+        content="AD0=0 时地址为 0x68",
+        reason="知识条目",
+    )
+    report = DistillReport(
+        [low_skill, knowledge],
+        quality_reports={0: QualityReport(0.2, 0.5, 0.0, 0.23, ["缺少必需字段"], ["补充描述"])},
+        quality_threshold=0.6,
+    )
+
+    report.confirm_all()
+
+    assert report.confirmed == [knowledge]
+    assert report.skipped == [low_skill]
+    assert "低质量技能提案未自动应用" in report.summary(applied=1)
+
+
+def test_report_manual_confirm_can_override_low_quality_skill():
+    """逐项确认允许用户覆盖低质量建议。"""
+    from agent.distill.distiller import Proposal
+    from agent.distill.quality_scorer import QualityReport
+    from agent.distill.report import DistillReport
+
+    low_skill = Proposal(type="new_skill", name="bad", reason="x", description="差")
+    report = DistillReport(
+        [low_skill],
+        quality_reports={0: QualityReport(0.2, 0.5, 0.0, 0.23, ["缺少必需字段"], ["补充描述"])},
+        quality_threshold=0.6,
+    )
+
+    report.confirm(0)
+
+    assert report.confirmed == [low_skill]
+    assert report.skipped == []
+
+
+def test_report_iter_proposals_and_summary():
+    """报告提供 REPL 入口需要的迭代和摘要接口。"""
+    from agent.distill.distiller import Proposal
+    from agent.distill.report import DistillReport
+
+    proposals = [
+        Proposal(type="new_skill", name="a", reason="1"),
+        Proposal(type="new_knowledge", category="tips", title="b", reason="2"),
+    ]
+    report = DistillReport(proposals)
+    report.confirm(0)
+    report.skip(1)
+
+    assert list(report.iter_proposals()) == [(0, proposals[0]), (1, proposals[1])]
+    summary = report.summary(applied=1)
+    assert "已应用 1" in summary
+    assert "跳过 1" in summary
+    assert "共 2" in summary
+
+
 def test_report_skip_all():
     """全部跳过。"""
     from agent.distill.distiller import Proposal

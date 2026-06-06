@@ -1,21 +1,9 @@
 """
 配置管理模块。
 
-提供基于 Pydantic 的配置模型和加载器。
+提供 legacy 配置加载与 SINAN_HOME 路径管理。
 """
 
-from .models import (
-    ContextConfig,
-    MemoryConfig,
-    ModelConfig,
-    SinanSettings,
-    TaskConfig,
-    ThinkingConfig,
-    ToolsConfig,
-)
-from .loader import ConfigLoader
-
-# 导入旧配置系统的函数（向后兼容）
 from .legacy import (
     apply_settings,
     create_default_config,
@@ -28,15 +16,6 @@ from .legacy import (
 )
 
 __all__ = [
-    "ThinkingConfig",
-    "ModelConfig",
-    "ToolsConfig",
-    "ContextConfig",
-    "MemoryConfig",
-    "TaskConfig",
-    "SinanSettings",
-    "ConfigLoader",
-    # 旧配置系统
     "apply_settings",
     "create_default_config",
     "get_model_config",

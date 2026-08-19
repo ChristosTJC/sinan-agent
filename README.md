@@ -1,3 +1,5 @@
+
+
 # 司南嵌入式智能体
 
 <img width="1428" height="766" alt="60499d04ce9aed82385ac3ce82cf364f" src="https://github.com/user-attachments/assets/0f4bf891-8a95-4098-9a1e-0930b6cf616d" />
@@ -14,7 +16,7 @@
 从源码安装开发版：
 
 ```bash
-git clone <仓库地址>
+git clone <仓库地址> sinan-embedded-agent
 cd sinan-embedded-agent
 python -m pip install ".[dev]"
 ```
